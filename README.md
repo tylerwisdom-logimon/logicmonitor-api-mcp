@@ -11,6 +11,17 @@ A Model Context Protocol (MCP) server that provides secure access to the LogicMo
 - **Natural Language Interface**: Designed for AI assistants like Claude
 - **Session Context**: Built-in session tools keep track of recent results, stored variables, and request history for follow-up actions
 
+### Tool Responses & Field Selection
+
+- All tools now return the full LogicMonitor API payload (`raw`) together with request metadata so downstream agents never lose fields that the API exposes.
+- When specifying the optional `fields` parameter, only LogicMonitor-supported field names are accepted. Invalid field names trigger a `InvalidParams` error to prevent silent data loss or filtering mistakes.
+- Use `*` (or omit `fields`) to request the complete object. The `docs/swagger.json` file shipped with the project contains the authoritative schema for each resource if you need to look up the available fields.
+- Responses always include:
+  - `items` / `device`, etc. – parsed data objects for convenience
+  - `raw` – the exact API payload
+  - `meta` – request/response metadata (status, timing, rate-limit info)
+  - `request` – the effective parameters sent to LogicMonitor (validated field list, offsets, filters, etc.)
+
 ## Installation
 
 ### Option 1: Install from npm (Recommended)

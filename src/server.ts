@@ -19,6 +19,7 @@ import { websiteGroupTools, handleWebsiteGroupTool } from './tools/websiteGroups
 import { sessionTools, handleSessionTool } from './tools/session.js';
 import { SessionManager, SessionContext } from './session/sessionManager.js';
 import { metricsManager } from './metrics/metricsManager.js';
+import { getKnownFields, ResourceKey } from './utils/fieldMetadata.js';
 
 export interface ServerConfig {
   name?: string;
@@ -53,7 +54,8 @@ export async function createServer(config: ServerConfig = {}) {
   const instructions = config.instructions || [
     APP_DESCRIPTION || 'Use the LogicMonitor tools to manage resources, devices, collectors, and alerts.',
     'Provide credentials via LM_ACCOUNT / LM_BEARER_TOKEN environment variables (stdio) or X-LM-* headers (HTTP).',
-    'Refer to each tool description for the expected input structure; responses are JSON summaries of API operations.',
+    'Refer to each tool description for the expected input structure; responses include raw API payloads plus request metadata.',
+    'Use resources/read on health://logicmonitor/fields/<resource> (device, device_group, website, website_group, collector, alert) to see the valid field names accepted by each tool.',
     'Session-aware helpers (lm_*_session_*) expose stored variables, recent tool results, and history for follow-up requests.'
   ].join('\n');
 
@@ -85,6 +87,42 @@ export async function createServer(config: ServerConfig = {}) {
       };
     }
   );
+
+  const fieldResourceMap: Array<{ key: ResourceKey; resource: string; uri: string; description: string }> = [
+    { key: 'device', resource: 'device', uri: 'health://logicmonitor/fields/device', description: 'Valid fields for lm_list_devices / lm_get_device.' },
+    { key: 'deviceGroup', resource: 'device_group', uri: 'health://logicmonitor/fields/device_group', description: 'Valid fields for device group tools.' },
+    { key: 'website', resource: 'website', uri: 'health://logicmonitor/fields/website', description: 'Valid fields for website tools.' },
+    { key: 'websiteGroup', resource: 'website_group', uri: 'health://logicmonitor/fields/website_group', description: 'Valid fields for website group tools.' },
+    { key: 'collector', resource: 'collector', uri: 'health://logicmonitor/fields/collector', description: 'Valid fields for lm_list_collectors.' },
+    { key: 'alert', resource: 'alert', uri: 'health://logicmonitor/fields/alert', description: 'Valid fields for alert tools.' }
+  ];
+
+  for (const mapping of fieldResourceMap) {
+    mcpServer.resource(
+      `logicmonitor-${mapping.resource}-fields`,
+      mapping.uri,
+      async () => {
+        const fields = Array.from(getKnownFields(mapping.key)).sort();
+        return {
+          contents: [
+            {
+              uri: mapping.uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  resource: mapping.resource,
+                  description: mapping.description,
+                  fields
+                },
+                null,
+                2
+              )
+            }
+          ]
+        };
+      }
+    );
+  }
 
   mcpServer.server.registerCapabilities({
     tools: {}

@@ -1,5 +1,6 @@
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { LogicMonitorClient } from '../api/client.js';
-import { LMAlert } from '../types/logicmonitor.js';
+import type { LMAlert } from '../types/logicmonitor.js';
 import {
   listAlertsSchema,
   getAlertSchema,
@@ -7,16 +8,7 @@ import {
   addAlertNoteSchema,
   escalateAlertSchema
 } from '../utils/validation.js';
-
-// Default fields to return for alert list operations when no fields are specified
-const DEFAULT_ALERT_FIELDS = [
-  'id', 'internalId', 'type', 'startEpoch', 'endEpoch', 'acked', 'ackedBy', 
-  'ackedEpoch', 'ackComment', 'rule', 'chain', 'severity', 'cleared', 
-  'sdted', 'monitorObjectName', 'monitorObjectType', 'instanceName', 
-  'dataPointName', 'alertValue', 'threshold', 'resourceId',
-  'resourceTemplateName', 'anomaly', 'adAlert'
-];
-
+import { sanitizeFields } from '../utils/fieldMetadata.js';
 
 // Tool handlers
 export async function listAlerts(
@@ -25,10 +17,19 @@ export async function listAlerts(
 ) {
   const { error, value: validated } = listAlertsSchema.validate(args);
   if (error) throw new Error(`Validation error: ${error.message}`);
-  
+
+  const fieldConfig = sanitizeFields('alert', validated.fields);
+
+  if (fieldConfig.invalid.length > 0) {
+    throw new McpError(
+      ErrorCode.InvalidParams,
+      `Unknown alert field(s): ${fieldConfig.invalid.join(', ')}`
+    );
+  }
+
   const result = await client.listAlerts({
     filter: validated.filter,
-    fields: validated.fields,
+    fields: fieldConfig.fieldsParam,
     size: validated.size || 50,
     offset: validated.offset || 0,
     sort: validated.sort,
@@ -36,52 +37,21 @@ export async function listAlerts(
     customColumns: validated.customColumns
   });
 
-  const items = result.items ?? [];
-  const reportedTotal = typeof result.total === 'number' ? result.total : items.length;
-  const searchId = (result.raw as { searchId?: string } | undefined)?.searchId;
-
-  const payload: {
-    total: number;
-    items: LMAlert[];
-    searchId: string | undefined;
-    request: {
-      filter: unknown;
-      fields: unknown;
-      offset: number;
-      size: number;
-      sort: unknown;
-      needMessage: unknown;
-      customColumns: unknown;
-    };
-    curated?: Record<string, unknown>[];
-  } = {
-    total: reportedTotal,
-    items,
-    searchId,
+  return {
+    total: result.total,
+    items: result.items as LMAlert[],
     request: {
       filter: validated.filter,
-      fields: validated.fields,
+      fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(','),
       offset: validated.offset ?? 0,
-      size: validated.size ?? items.length,
+      size: validated.size ?? result.items.length,
       sort: validated.sort,
       needMessage: validated.needMessage,
       customColumns: validated.customColumns
-    }
+    },
+    meta: result.meta,
+    raw: result.raw
   };
-
-  if (!validated.fields || validated.fields === '*') {
-    payload.curated = items.map((alert: LMAlert) => {
-      const curated: Record<string, unknown> = {};
-      DEFAULT_ALERT_FIELDS.forEach(field => {
-        if (field in alert) {
-          curated[field] = (alert as any)[field];
-        }
-      });
-      return curated;
-    });
-  }
-
-  return payload;
 }
 
 export async function getAlert(
@@ -91,7 +61,11 @@ export async function getAlert(
   const { error, value: validated } = getAlertSchema.validate(args);
   if (error) throw new Error(`Validation error: ${error.message}`);
   const alertResult = await client.getAlert(validated.alertId);
-  return alertResult.data;
+  return {
+    alert: alertResult.data as LMAlert,
+    meta: alertResult.meta,
+    raw: alertResult.raw
+  };
 }
 
 export async function ackAlert(
@@ -100,10 +74,12 @@ export async function ackAlert(
 ) {
   const { error, value: validated } = ackAlertSchema.validate(args);
   if (error) throw new Error(`Validation error: ${error.message}`);
-  await client.ackAlert(validated.alertId, validated.ackComment);
+  const ackResult = await client.ackAlert(validated.alertId, validated.ackComment);
   return {
     success: true,
-    message: `Alert ${validated.alertId} acknowledged successfully`
+    alertId: validated.alertId,
+    meta: ackResult.meta,
+    raw: ackResult.raw
   };
 }
 
@@ -113,10 +89,12 @@ export async function addAlertNote(
 ) {
   const { error, value: validated } = addAlertNoteSchema.validate(args);
   if (error) throw new Error(`Validation error: ${error.message}`);
-  await client.addAlertNote(validated.alertId, validated.ackComment);
+  const noteResult = await client.addAlertNote(validated.alertId, validated.ackComment);
   return {
     success: true,
-    message: `Note added to alert ${validated.alertId} successfully`
+    alertId: validated.alertId,
+    meta: noteResult.meta,
+    raw: noteResult.raw
   };
 }
 
@@ -126,10 +104,12 @@ export async function escalateAlert(
 ) {
   const { error, value: validated } = escalateAlertSchema.validate(args);
   if (error) throw new Error(`Validation error: ${error.message}`);
-  await client.escalateAlert(validated.alertId);
+  const escalateResult = await client.escalateAlert(validated.alertId);
   return {
     success: true,
-    message: `Alert ${validated.alertId} escalated successfully`
+    alertId: validated.alertId,
+    meta: escalateResult.meta,
+    raw: escalateResult.raw
   };
 }
 

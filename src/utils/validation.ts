@@ -9,8 +9,7 @@ export const listDevicesSchema = Joi.object({
   start: Joi.number().optional(),
   end: Joi.number().optional(),
   netflowFilter: Joi.string().optional(),
-  includeDeletedResources: Joi.boolean().optional(),
-  returnMode: Joi.string().valid('summary', 'raw', 'both').optional()
+  includeDeletedResources: Joi.boolean().optional()
 }).unknown(false);
 
 export const getDeviceSchema = Joi.object({
@@ -19,8 +18,7 @@ export const getDeviceSchema = Joi.object({
   start: Joi.number().optional(),
   end: Joi.number().optional(),
   netflowFilter: Joi.string().optional(),
-  needStcGrpAndSortedCP: Joi.boolean().optional(),
-  returnMode: Joi.string().valid('summary', 'raw', 'both').optional()
+  needStcGrpAndSortedCP: Joi.boolean().optional()
 }).unknown(false);
 
 const singleDeviceSchema = Joi.object({
@@ -71,8 +69,7 @@ export const createDeviceSchema = Joi.object({
   batchOptions: Joi.object({
     maxConcurrent: Joi.number().min(1).max(50).optional(),
     continueOnError: Joi.boolean().optional()
-  }).optional(),
-  returnMode: Joi.string().valid('summary', 'raw', 'both').optional()
+  }).optional()
 }).xor('displayName', 'devices').unknown(true);
 
 const singleUpdateDeviceSchema = Joi.object({
@@ -109,8 +106,7 @@ export const updateDeviceSchema = Joi.object({
   batchOptions: Joi.object({
     maxConcurrent: Joi.number().min(1).max(50).optional(),
     continueOnError: Joi.boolean().optional()
-  }).optional(),
-  returnMode: Joi.string().valid('summary', 'raw', 'both').optional()
+  }).optional()
 }).xor('deviceId', 'devices').unknown(true);
 
 const singleDeleteDeviceSchema = Joi.object({
@@ -129,8 +125,7 @@ export const deleteDeviceSchema = Joi.object({
   batchOptions: Joi.object({
     maxConcurrent: Joi.number().min(1).max(50).optional(),
     continueOnError: Joi.boolean().optional()
-  }).optional(),
-  returnMode: Joi.string().valid('summary', 'raw', 'both').optional()
+  }).optional()
 }).xor('deviceId', 'devices').unknown(true);
 
 // Device Group validation schemas

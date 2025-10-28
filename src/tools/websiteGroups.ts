@@ -1,4 +1,4 @@
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { ErrorCode, McpError, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { LogicMonitorClient } from '../api/client.js';
 import {
   listWebsiteGroupsSchema,
@@ -10,6 +10,9 @@ import {
 import { batchProcessor } from '../utils/batchProcessor.js';
 import { extractBatchOptions, isBatchInput, normalizeToArray } from '../utils/schemaHelpers.js';
 import { SessionContext } from '../session/sessionManager.js';
+import { sanitizeFields } from '../utils/fieldMetadata.js';
+import { throwBatchFailure } from '../utils/batchUtils.js';
+import type { LMWebsiteGroup } from '../types/logicmonitor.js';
 
 export const websiteGroupTools: Tool[] = [
   {
@@ -235,35 +238,48 @@ export async function handleWebsiteGroupTool(
   switch (toolName) {
     case 'lm_list_website_groups': {
       const validated = await listWebsiteGroupsSchema.validateAsync(args);
-      const result = await client.listWebsiteGroups(validated);
-      const payload = {
-        total: result.total ?? result.items?.length ?? 0,
-        items: result.items ?? [],
-        searchId: result.searchId,
+      const { fields, ...rest } = validated;
+      const fieldConfig = sanitizeFields('websiteGroup', fields);
+
+      if (fieldConfig.invalid.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown website group field(s): ${fieldConfig.invalid.join(', ')}`
+        );
+      }
+
+      const apiResult = await client.listWebsiteGroups({
+        ...rest,
+        fields: fieldConfig.fieldsParam
+      });
+
+      const response = {
+        total: apiResult.total,
+        items: apiResult.items as LMWebsiteGroup[],
         request: {
-          filter: validated.filter,
-          fields: validated.fields,
-          offset: validated.offset ?? 0,
-          size: validated.size ?? (result.items?.length ?? 0)
-        }
+          ...rest,
+          fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        },
+        meta: apiResult.meta,
+        raw: apiResult.raw
       };
 
-      sessionContext.variables.lastWebsiteGroupList = payload.items;
-      sessionContext.variables.lastWebsiteGroupListMetadata = payload.request;
+      sessionContext.variables.lastWebsiteGroupList = response;
 
-      return {
-        ...payload,
-        summary: `Retrieved ${payload.items.length} website group(s).`
-      };
+      return response;
     }
 
     case 'lm_get_website_group': {
       const validated = await getWebsiteGroupSchema.validateAsync(args);
       const groupResult = await client.getWebsiteGroup(validated.groupId);
-      const group = groupResult.data;
-      sessionContext.variables.lastWebsiteGroup = group;
+      const response = {
+        group: groupResult.data,
+        meta: groupResult.meta,
+        raw: groupResult.raw
+      };
+      sessionContext.variables.lastWebsiteGroup = response;
       sessionContext.variables.lastWebsiteGroupId = validated.groupId;
-      return group;
+      return response;
     }
 
     case 'lm_create_website_group': {
@@ -293,18 +309,19 @@ export async function handleWebsiteGroupTool(
         if (!singleResult.data) {
           throw new Error('No response data returned for created website group.');
         }
-        const groupCreated = singleResult.data;
+        const groupCreated = singleResult.data as LMWebsiteGroup;
         sessionContext.variables.lastCreatedWebsiteGroup = groupCreated;
         return {
           success: true,
           group: groupCreated,
-          message: `Website group '${groupCreated?.name}' created successfully.`
+          raw: singleResult.raw ?? groupCreated,
+          meta: singleResult.meta ?? null
         };
       }
 
       sessionContext.variables.lastCreatedWebsiteGroups = result.results
         .filter(entry => entry.success && entry.data)
-        .map(entry => entry.data!);
+        .map(entry => entry.data as LMWebsiteGroup);
 
       return {
         success: result.success,
@@ -312,8 +329,10 @@ export async function handleWebsiteGroupTool(
         results: result.results.map(entry => ({
           index: entry.index,
           success: entry.success,
-          group: entry.data ?? null,
-          error: entry.error
+          group: entry.data ? (entry.data as LMWebsiteGroup) : null,
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }
@@ -341,23 +360,24 @@ export async function handleWebsiteGroupTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to update website group');
+          throwBatchFailure('Website group update', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for updated website group.');
         }
-        const groupUpdated = singleResult.data;
+        const groupUpdated = singleResult.data as LMWebsiteGroup;
         sessionContext.variables.lastUpdatedWebsiteGroup = groupUpdated;
         return {
           success: true,
           group: groupUpdated,
-          message: `Website group '${groupUpdated?.name}' updated successfully.`
+          raw: singleResult.raw ?? groupUpdated,
+          meta: singleResult.meta ?? null
         };
       }
 
       sessionContext.variables.lastUpdatedWebsiteGroups = result.results
         .filter(entry => entry.success && entry.data)
-        .map(entry => entry.data!);
+        .map(entry => entry.data as LMWebsiteGroup);
 
       return {
         success: result.success,
@@ -365,8 +385,10 @@ export async function handleWebsiteGroupTool(
         results: result.results.map(entry => ({
           index: entry.index,
           success: entry.success,
-          group: entry.data ?? null,
-          error: entry.error
+          group: entry.data ? (entry.data as LMWebsiteGroup) : null,
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }
@@ -393,17 +415,18 @@ export async function handleWebsiteGroupTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to delete website group');
+          throwBatchFailure('Website group delete', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for deleted website group.');
         }
-        const deletedGroup = singleResult.data;
+        const deletedGroup = singleResult.data as { groupId: number; deleteChildren: boolean };
         sessionContext.variables.lastDeletedWebsiteGroupId = deletedGroup.groupId;
         return {
           success: true,
           groupId: deletedGroup.groupId,
-          message: `Website group ${deletedGroup.groupId} deleted successfully.`
+          raw: singleResult.raw ?? deletedGroup,
+          meta: singleResult.meta ?? null
         };
       }
 
@@ -418,7 +441,9 @@ export async function handleWebsiteGroupTool(
           index: entry.index,
           success: entry.success,
           groupId: entry.data?.groupId ?? null,
-          error: entry.error
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }

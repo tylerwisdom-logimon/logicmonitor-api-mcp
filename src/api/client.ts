@@ -47,11 +47,13 @@ export interface ApiListResult<T> {
   items: T[];
   total: number;
   searchId?: string;
-  raw: LMPaginatedResponse<T> & {
-    pages?: Array<{
+  raw: {
+    combined: LMPaginatedResponse<T>;
+    pages: Array<{
       offset: number;
       size: number;
       returned: number;
+      response: unknown;
     }>;
   };
   meta: LogicMonitorResponseMeta & {
@@ -227,7 +229,7 @@ export class LogicMonitorClient {
     let totalCount = 0;
     let searchId: string | undefined;
     let hasMore = true;
-    const pages: Array<{ offset: number; size: number; returned: number }> = [];
+    const pages: Array<{ offset: number; size: number; returned: number; response: unknown }> = [];
     const startedAt = performance.now();
     let meta: LogicMonitorResponseMeta | undefined;
 
@@ -269,7 +271,8 @@ export class LogicMonitorClient {
         pages.push({
           offset,
           size: requestedSize,
-          returned: items.length
+          returned: items.length,
+          response: response.data
         });
 
         this.logger.debug(`Fetched page for ${endpoint}`, {
@@ -312,14 +315,18 @@ export class LogicMonitorClient {
       expectedTotal: totalCount
     });
 
+    const combined: LMPaginatedResponse<T> = {
+      total: totalCount,
+      searchId,
+      items: allItems
+    };
+
     return {
       items: allItems,
       total: totalCount,
       searchId,
       raw: {
-        total: totalCount,
-        searchId,
-        items: allItems,
+        combined,
         pages
       },
       meta: {
@@ -347,8 +354,7 @@ export class LogicMonitorClient {
   }): Promise<ApiListResult<LMDevice>> {
     const formattedParams: Record<string, unknown> = {
       ...params,
-      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined,
-      fields: params?.fields ?? '*'
+      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined
     };
 
     const sanitizedParams = Object.fromEntries(
@@ -532,8 +538,7 @@ export class LogicMonitorClient {
   }): Promise<ApiListResult<LMDeviceGroup>> {
     const formattedParams: Record<string, unknown> = {
       ...params,
-      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined,
-      fields: params?.fields ?? '*'
+      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined
     };
 
     const sanitizedParams = Object.fromEntries(
@@ -692,8 +697,7 @@ export class LogicMonitorClient {
   }): Promise<ApiListResult<LMWebsite>> {
     const formattedParams: Record<string, unknown> = {
       ...params,
-      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined,
-      fields: params?.fields ?? '*'
+      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined
     };
 
     const sanitizedParams = Object.fromEntries(
@@ -707,7 +711,7 @@ export class LogicMonitorClient {
     const queryParams = Object.fromEntries(
       Object.entries({
         ...params,
-        fields: params?.fields ?? '*'
+        fields: params?.fields
       }).filter(([, value]) => value !== undefined && value !== null)
     );
 
@@ -840,8 +844,7 @@ export class LogicMonitorClient {
   }): Promise<ApiListResult<LMWebsiteGroup>> {
     const formattedParams: Record<string, unknown> = {
       ...params,
-      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined,
-      fields: params?.fields ?? '*'
+      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined
     };
 
     const sanitizedParams = Object.fromEntries(
@@ -855,7 +858,7 @@ export class LogicMonitorClient {
     const queryParams = Object.fromEntries(
       Object.entries({
         ...params,
-        fields: params?.fields ?? '*'
+        fields: params?.fields
       }).filter(([, value]) => value !== undefined && value !== null)
     );
 
@@ -981,8 +984,7 @@ export class LogicMonitorClient {
   }): Promise<ApiListResult<LMCollector>> {
     const formattedParams: Record<string, unknown> = {
       ...params,
-      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined,
-      fields: params?.fields ?? '*'
+      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined
     };
 
     const sanitizedParams = Object.fromEntries(
@@ -1010,8 +1012,7 @@ export class LogicMonitorClient {
   }): Promise<ApiListResult<LMAlert>> {
     const formattedParams: Record<string, unknown> = {
       ...params,
-      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined,
-      fields: params?.fields ?? '*'
+      filter: params?.filter ? formatLogicMonitorFilter(params.filter) : undefined
     };
 
     const sanitizedParams = Object.fromEntries(
@@ -1027,7 +1028,7 @@ export class LogicMonitorClient {
       params: { ...sanitizedParams, size: pageSize, offset: initialOffset }
     };
 
-    const pages: Array<{ offset: number; size: number; returned: number }> = [];
+    const pages: Array<{ offset: number; size: number; returned: number; response: unknown }> = [];
     const allItems: LMAlert[] = [];
     const startedAt = performance.now();
 
@@ -1035,6 +1036,7 @@ export class LogicMonitorClient {
     let currentOffset = initialOffset;
     let reportedTotal: number | undefined;
     let fetchMore = true;
+    let searchId: string | undefined;
 
     while (fetchMore) {
       const pageStarted = performance.now();
@@ -1051,10 +1053,15 @@ export class LogicMonitorClient {
       const items = Array.isArray(page.items) ? page.items : [];
       allItems.push(...items);
 
+      if (!searchId && typeof (page as any)?.searchId === 'string') {
+        searchId = (page as any).searchId;
+      }
+
       pages.push({
         offset: currentOffset,
         size: pageSize,
-        returned: items.length
+        returned: items.length,
+        response: page
       });
 
       reportedTotal = page.total;
@@ -1094,12 +1101,17 @@ export class LogicMonitorClient {
 
     const total = allItems.length;
 
+    const combined: LMAlertPaginatedResponse = {
+      total,
+      items: allItems,
+      searchId
+    };
+
     return {
       items: allItems,
       total,
       raw: {
-        total,
-        items: allItems,
+        combined,
         pages
       },
       meta: {

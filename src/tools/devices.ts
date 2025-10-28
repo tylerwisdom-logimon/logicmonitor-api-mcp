@@ -1,4 +1,4 @@
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { McpError, Tool, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { LogicMonitorClient } from '../api/client.js';
 import {
   listDevicesSchema,
@@ -8,11 +8,12 @@ import {
   deleteDeviceSchema
 } from '../utils/validation.js';
 import { isBatchInput, normalizeToArray, extractBatchOptions } from '../utils/schemaHelpers.js';
-import { batchProcessor, BatchItem, BatchResult } from '../utils/batchProcessor.js';
+import { batchProcessor, BatchResult } from '../utils/batchProcessor.js';
 import { SessionContext } from '../session/sessionManager.js';
-import { buildToolResponse, resolveReturnMode, ReturnMode } from '../utils/toolResponses.js';
 import type { LMDevice } from '../types/logicmonitor.js';
-import { LogicMonitorApiError } from '../api/errors.js';
+import { sanitizeFields } from '../utils/fieldMetadata.js';
+import { throwBatchFailure } from '../utils/batchUtils.js';
+
 
 export const deviceTools: Tool[] = [
   {
@@ -55,11 +56,6 @@ export const deviceTools: Tool[] = [
         includeDeletedResources: {
           type: 'boolean',
           description: 'Include deleted resources (default: false).'
-        },
-        returnMode: {
-          type: 'string',
-          enum: ['summary', 'raw', 'both'],
-          description: 'Controls whether the tool returns summary data, raw API payload, or both (default).'
         }
       },
       additionalProperties: false
@@ -94,11 +90,6 @@ export const deviceTools: Tool[] = [
         needStcGrpAndSortedCP: {
           type: 'boolean',
           description: 'Include static group and sorted custom property information.'
-        },
-        returnMode: {
-          type: 'string',
-          enum: ['summary', 'raw', 'both'],
-          description: 'Controls whether the tool returns summary data, raw API payload, or both (default).'
         }
       },
       required: ['deviceId'],
@@ -191,11 +182,6 @@ export const deviceTools: Tool[] = [
             }
           },
           description: 'Options for batch processing.'
-        },
-        returnMode: {
-          type: 'string',
-          enum: ['summary', 'raw', 'both'],
-          description: 'Controls whether responses include summary data, raw API payload, or both (default).'
         }
       },
       additionalProperties: true
@@ -282,11 +268,6 @@ export const deviceTools: Tool[] = [
             }
           },
           description: 'Options for batch processing.'
-        },
-        returnMode: {
-          type: 'string',
-          enum: ['summary', 'raw', 'both'],
-          description: 'Controls whether responses include summary data, raw API payload, or both (default).'
         }
       },
       additionalProperties: true
@@ -332,49 +313,12 @@ export const deviceTools: Tool[] = [
             }
           },
           description: 'Options for batch processing.'
-        },
-        returnMode: {
-          type: 'string',
-          enum: ['summary', 'raw', 'both'],
-          description: 'Controls whether responses include summary data, raw API payload, or both (default).'
         }
       },
       additionalProperties: false
     }
   }
 ];
-
-const DEVICE_SAMPLE_SIZE = 5;
-
-function summarizeDeviceListItem(device: LMDevice) {
-  return {
-    id: device.id,
-    name: device.displayName ?? device.name,
-    hostStatus: device.hostStatus,
-    alertStatus: device.alertStatus
-  };
-}
-
-function summarizeDevice(device: LMDevice) {
-  const hostGroupIds =
-    typeof device.hostGroupIds === 'string'
-      ? device.hostGroupIds
-          .split(',')
-          .map((value) => Number(value.trim()))
-          .filter((value) => Number.isFinite(value))
-      : device.hostGroupIds;
-
-  return {
-    id: device.id,
-    name: device.displayName ?? device.name,
-    hostStatus: device.hostStatus,
-    alertStatus: device.alertStatus,
-    collectorId: device.preferredCollectorId,
-    hostGroupIds,
-    createdOn: device.createdOn,
-    updatedOn: device.updatedOn
-  };
-}
 
 function mapCreateDeviceInput(input: any) {
   const customProps = Array.isArray(input.customProperties)
@@ -428,20 +372,6 @@ function normalizeBatchEntries<T>(batch: BatchResult<T>) {
   }));
 }
 
-function throwBatchFailure(action: string, entry: BatchItem<any>): never {
-  const message = entry.error || `${action} failed`;
-  if (entry.diagnostics) {
-    throw new LogicMonitorApiError(message, {
-      status: entry.diagnostics.status,
-      code: entry.diagnostics.code,
-      requestId: entry.diagnostics.requestId,
-      requestUrl: entry.diagnostics.requestUrl,
-      requestMethod: entry.diagnostics.requestMethod
-    });
-  }
-  throw new Error(message);
-}
-
 export async function handleDeviceTool(
   toolName: string,
   args: any,
@@ -451,73 +381,76 @@ export async function handleDeviceTool(
   switch (toolName) {
     case 'lm_list_devices': {
       const validated = await listDevicesSchema.validateAsync(args);
-      const { returnMode, ...query } = validated as typeof validated & { returnMode?: ReturnMode };
-      const mode = resolveReturnMode(returnMode);
-      const apiResult = await client.listDevices(query);
-      const requestParams = {
-        ...query,
-        fields: query.fields ?? '*'
-      };
-      const summary = {
-        total: apiResult.total,
-        returned: apiResult.items.length,
-        searchId: apiResult.searchId ?? null,
-        sample: apiResult.items.slice(0, DEVICE_SAMPLE_SIZE).map(summarizeDeviceListItem)
+      const { fields, ...rest } = validated;
+      const fieldConfig = sanitizeFields('device', fields);
+
+      if (fieldConfig.invalid.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown device field(s): ${fieldConfig.invalid.join(', ')}`
+        );
+      }
+
+      const query = {
+        ...rest,
+        fields: fieldConfig.fieldsParam
       };
 
-      sessionContext.variables.lastDeviceList = {
-        summary,
-        raw: apiResult.raw,
+      const apiResult = await client.listDevices(query);
+
+      const response = {
+        total: apiResult.total,
+        items: apiResult.items as LMDevice[],
+        request: {
+          ...rest,
+          fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        },
         meta: apiResult.meta,
-        request: requestParams
+        raw: apiResult.raw
       };
+
+      sessionContext.variables.lastDeviceList = response;
       sessionContext.variables.lastDeviceListIds = apiResult.items.map((device) => device.id);
 
-      return buildToolResponse({
-        mode,
-        summary,
-        raw: apiResult.raw,
-        meta: apiResult.meta,
-        request: requestParams,
-        extra: {
-          total: apiResult.total,
-          returned: apiResult.items.length,
-          searchId: apiResult.searchId ?? undefined,
-          items: mode === 'summary' ? summary.sample : apiResult.items
-        }
-      });
+      return response;
     }
 
     case 'lm_get_device': {
       const validated = await getDeviceSchema.validateAsync(args);
-      const { deviceId, returnMode, ...options } = validated as typeof validated & { returnMode?: ReturnMode };
-      const mode = resolveReturnMode(returnMode);
-      const apiResult = await client.getDevice(deviceId, options);
-      const summary = {
-        ...summarizeDevice(apiResult.data),
-        message: `Retrieved device ${apiResult.data.displayName ?? apiResult.data.name ?? deviceId}.`
+      const { deviceId, fields, ...options } = validated;
+      const fieldConfig = sanitizeFields('device', fields);
+
+      if (fieldConfig.invalid.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown device field(s): ${fieldConfig.invalid.join(', ')}`
+        );
+      }
+
+      const apiResult = await client.getDevice(deviceId, {
+        ...options,
+        fields: fieldConfig.fieldsParam
+      });
+
+      const response = {
+        device: apiResult.data,
+        request: {
+          deviceId,
+          ...options,
+          fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        },
+        meta: apiResult.meta,
+        raw: apiResult.raw
       };
 
       sessionContext.variables.lastDevice = apiResult.data;
-      sessionContext.variables.lastDeviceSummary = summary;
       sessionContext.variables.lastDeviceId = deviceId;
 
-      return buildToolResponse({
-        mode,
-        summary,
-        raw: apiResult.raw,
-        meta: apiResult.meta,
-        request: { deviceId, ...options },
-        extra: {
-          deviceId,
-          device: mode === 'summary' ? summary : apiResult.data
-        }
-      });
+      return response;
     }
 
     case 'lm_create_device': {
       const validated = await createDeviceSchema.validateAsync(args);
-      const mode = resolveReturnMode(validated.returnMode);
       const isBatch = isBatchInput(validated, 'devices');
       const batchOptions = extractBatchOptions(validated);
       const devicesInput = normalizeToArray(validated, 'devices');
@@ -542,65 +475,31 @@ export async function handleDeviceTool(
         }
         const createdDevice = entry.data as LMDevice;
         sessionContext.variables.lastCreatedDevice = createdDevice;
-        const summary = {
-          ...summarizeDevice(createdDevice),
-          message: `Device '${createdDevice.displayName ?? createdDevice.name}' created successfully.`
-        };
-
-        return buildToolResponse({
-          mode,
-          summary,
+        return {
+          success: true,
+          device: createdDevice,
           raw: entry.raw ?? createdDevice,
-          meta: entry.meta,
-          request: mappedDevices[0],
-          extra: {
-            success: true
-          }
-        });
+          meta: entry.meta ?? null
+        };
       }
 
       const successful = normalized.filter((entry) => entry.success && entry.data);
       sessionContext.variables.lastCreatedDevices = successful.map((entry) => entry.data as LMDevice);
 
-      const summary = {
-        total: batchResult.summary.total,
-        succeeded: batchResult.summary.succeeded,
-        failed: batchResult.summary.failed,
-        sample: successful
-          .slice(0, DEVICE_SAMPLE_SIZE)
-          .map((entry) => summarizeDevice(entry.data as LMDevice))
-      };
-
-      return buildToolResponse({
-        mode,
-        summary,
-        raw: {
-          success: batchResult.success,
-          summary: batchResult.summary,
-          results: normalized
-        },
+      return {
+        success: batchResult.success,
+        summary: batchResult.summary,
         request: {
           batch: true,
           batchOptions,
           devices: mappedDevices
         },
-        diagnostics: normalized
-          .filter((entry) => !entry.success)
-          .map((entry) => ({
-            index: entry.index,
-            error: entry.error,
-            diagnostics: entry.diagnostics
-          })),
-        extra: {
-          success: batchResult.success,
-          results: normalized
-        }
-      });
+        results: normalized
+      };
     }
 
     case 'lm_update_device': {
       const validated = await updateDeviceSchema.validateAsync(args);
-      const mode = resolveReturnMode(validated.returnMode);
       const isBatch = isBatchInput(validated, 'devices');
       const batchOptions = extractBatchOptions(validated);
       const devicesInput = normalizeToArray(validated, 'devices');
@@ -625,43 +524,20 @@ export async function handleDeviceTool(
         }
         const updatedDevice = entry.data as LMDevice;
         sessionContext.variables.lastUpdatedDevice = updatedDevice;
-        const summary = {
-          ...summarizeDevice(updatedDevice),
-          message: `Device '${updatedDevice.displayName ?? updatedDevice.name}' updated successfully.`
-        };
-
-        return buildToolResponse({
-          mode,
-          summary,
+        return {
+          success: true,
+          device: updatedDevice,
           raw: entry.raw ?? updatedDevice,
-          meta: entry.meta,
-          request: { deviceId: mappedDevices[0].deviceId, ...mappedDevices[0].payload },
-          extra: {
-            success: true
-          }
-        });
+          meta: entry.meta ?? null
+        };
       }
 
       const successful = normalized.filter((entry) => entry.success && entry.data);
       sessionContext.variables.lastUpdatedDevices = successful.map((entry) => entry.data as LMDevice);
 
-      const summary = {
-        total: batchResult.summary.total,
-        succeeded: batchResult.summary.succeeded,
-        failed: batchResult.summary.failed,
-        sample: successful
-          .slice(0, DEVICE_SAMPLE_SIZE)
-          .map((entry) => summarizeDevice(entry.data as LMDevice))
-      };
-
-      return buildToolResponse({
-        mode,
-        summary,
-        raw: {
-          success: batchResult.success,
-          summary: batchResult.summary,
-          results: normalized
-        },
+      return {
+        success: batchResult.success,
+        summary: batchResult.summary,
         request: {
           batch: true,
           batchOptions,
@@ -670,23 +546,12 @@ export async function handleDeviceTool(
             ...entry.payload
           }))
         },
-        diagnostics: normalized
-          .filter((entry) => !entry.success)
-          .map((entry) => ({
-            index: entry.index,
-            error: entry.error,
-            diagnostics: entry.diagnostics
-          })),
-        extra: {
-          success: batchResult.success,
-          results: normalized
-        }
-      });
+        results: normalized
+      };
     }
 
     case 'lm_delete_device': {
       const validated = await deleteDeviceSchema.validateAsync(args);
-      const mode = resolveReturnMode(validated.returnMode);
       const isBatch = isBatchInput(validated, 'devices');
       const batchOptions = extractBatchOptions(validated);
       const devicesInput = normalizeToArray(validated, 'devices');
@@ -711,21 +576,12 @@ export async function handleDeviceTool(
         }
         const deletedId = (entry.data as { deviceId: number }).deviceId;
         sessionContext.variables.lastDeletedDeviceId = deletedId;
-        const summary = {
+        return {
+          success: true,
           deviceId: deletedId,
-          message: `Device ${deletedId} deleted successfully.`
-        };
-
-        return buildToolResponse({
-          mode,
-          summary,
           raw: entry.raw ?? entry.data,
-          meta: entry.meta,
-          request: { deviceId: deletedId },
-          extra: {
-            success: true
-          }
-        });
+          meta: entry.meta ?? null
+        };
       }
 
       const successfulIds = normalized
@@ -734,38 +590,16 @@ export async function handleDeviceTool(
 
       sessionContext.variables.lastDeletedDeviceIds = successfulIds;
 
-      const summary = {
-        total: batchResult.summary.total,
-        succeeded: batchResult.summary.succeeded,
-        failed: batchResult.summary.failed,
-        deletedIds: successfulIds
-      };
-
-      return buildToolResponse({
-        mode,
-        summary,
-        raw: {
-          success: batchResult.success,
-          summary: batchResult.summary,
-          results: normalized
-        },
+      return {
+        success: batchResult.success,
+        summary: batchResult.summary,
         request: {
           batch: true,
           batchOptions,
           devices: mappedDevices
         },
-        diagnostics: normalized
-          .filter((entry) => !entry.success)
-          .map((entry) => ({
-            index: entry.index,
-            error: entry.error,
-            diagnostics: entry.diagnostics
-          })),
-        extra: {
-          success: batchResult.success,
-          results: normalized
-        }
-      });
+        results: normalized
+      };
     }
 
     default:

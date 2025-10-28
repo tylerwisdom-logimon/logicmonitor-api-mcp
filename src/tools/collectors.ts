@@ -1,7 +1,9 @@
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { ErrorCode, McpError, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { LogicMonitorClient } from '../api/client.js';
 import { listCollectorsSchema } from '../utils/validation.js';
 import { SessionContext } from '../session/sessionManager.js';
+import { sanitizeFields } from '../utils/fieldMetadata.js';
+import type { LMCollector } from '../types/logicmonitor.js';
 
 export const collectorTools: Tool[] = [
   {
@@ -44,26 +46,35 @@ export async function handleCollectorTool(
   switch (toolName) {
     case 'lm_list_collectors': {
       const validated = await listCollectorsSchema.validateAsync(args);
-      const result = await client.listCollectors(validated);
-      const payload = {
-        total: result.total ?? result.items?.length ?? 0,
-        items: result.items ?? [],
-        searchId: result.searchId,
+      const { fields, ...rest } = validated;
+      const fieldConfig = sanitizeFields('collector', fields);
+
+      if (fieldConfig.invalid.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown collector field(s): ${fieldConfig.invalid.join(', ')}`
+        );
+      }
+
+      const apiResult = await client.listCollectors({
+        ...rest,
+        fields: fieldConfig.fieldsParam
+      });
+
+      const response = {
+        total: apiResult.total,
+        items: apiResult.items as LMCollector[],
         request: {
-          filter: validated.filter,
-          fields: validated.fields,
-          offset: validated.offset ?? 0,
-          size: validated.size ?? (result.items?.length ?? 0)
-        }
+          ...rest,
+          fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        },
+        meta: apiResult.meta,
+        raw: apiResult.raw
       };
 
-      sessionContext.variables.lastCollectorList = payload.items;
-      sessionContext.variables.lastCollectorListMetadata = payload.request;
+      sessionContext.variables.lastCollectorList = response;
 
-      return {
-        ...payload,
-        summary: `Retrieved ${payload.items.length} collector(s).`
-      };
+      return response;
     }
 
     default:

@@ -1,4 +1,4 @@
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { ErrorCode, McpError, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { LogicMonitorClient } from '../api/client.js';
 import {
   listDeviceGroupsSchema,
@@ -10,6 +10,9 @@ import {
 import { batchProcessor } from '../utils/batchProcessor.js';
 import { extractBatchOptions, isBatchInput, normalizeToArray } from '../utils/schemaHelpers.js';
 import { SessionContext } from '../session/sessionManager.js';
+import { sanitizeFields } from '../utils/fieldMetadata.js';
+import { throwBatchFailure } from '../utils/batchUtils.js';
+import type { LMDeviceGroup } from '../types/logicmonitor.js';
 
 export const deviceGroupTools: Tool[] = [
   {
@@ -252,38 +255,51 @@ export async function handleDeviceGroupTool(
   switch (toolName) {
     case 'lm_list_device_groups': {
       const validated = await listDeviceGroupsSchema.validateAsync(args);
-      const result = await client.listDeviceGroups(validated);
-      const payload = {
-        total: result.total ?? result.items?.length ?? 0,
-        items: result.items ?? [],
-        searchId: result.searchId,
+      const { fields, ...rest } = validated;
+      const fieldConfig = sanitizeFields('deviceGroup', fields);
+
+      if (fieldConfig.invalid.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown device group field(s): ${fieldConfig.invalid.join(', ')}`
+        );
+      }
+
+      const apiResult = await client.listDeviceGroups({
+        ...rest,
+        fields: fieldConfig.fieldsParam
+      });
+
+      const response = {
+        total: apiResult.total,
+        items: apiResult.items as LMDeviceGroup[],
         request: {
-          filter: validated.filter,
-          fields: validated.fields,
-          parentId: validated.parentId,
-          offset: validated.offset ?? 0,
-          size: validated.size ?? (result.items?.length ?? 0)
-        }
+          ...rest,
+          fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        },
+        meta: apiResult.meta,
+        raw: apiResult.raw
       };
 
-      sessionContext.variables.lastDeviceGroupList = payload.items;
-      sessionContext.variables.lastDeviceGroupListMetadata = payload.request;
+      sessionContext.variables.lastDeviceGroupList = response;
 
-      return {
-        ...payload,
-        summary: `Retrieved ${payload.items.length} device group(s).`
-      };
+      return response;
     }
 
     case 'lm_get_device_group': {
       const validated = await getDeviceGroupSchema.validateAsync(args);
       const groupResult = await client.getDeviceGroup(validated.groupId);
-      const group = groupResult.data;
 
-      sessionContext.variables.lastDeviceGroup = group;
+      const response = {
+        group: groupResult.data,
+        meta: groupResult.meta,
+        raw: groupResult.raw
+      };
+
+      sessionContext.variables.lastDeviceGroup = response;
       sessionContext.variables.lastDeviceGroupId = validated.groupId;
 
-      return group;
+      return response;
     }
 
     case 'lm_create_device_group': {
@@ -308,23 +324,24 @@ export async function handleDeviceGroupTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to create device group');
+          throwBatchFailure('Device group create', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for created device group.');
         }
-        const groupCreated = singleResult.data;
+        const groupCreated = singleResult.data as LMDeviceGroup;
         sessionContext.variables.lastCreatedDeviceGroup = groupCreated;
         return {
           success: true,
           group: groupCreated,
-          message: `Device group '${groupCreated?.name}' created successfully.`
+          raw: singleResult.raw ?? groupCreated,
+          meta: singleResult.meta ?? null
         };
       }
 
       sessionContext.variables.lastCreatedDeviceGroups = result.results
         .filter(entry => entry.success && entry.data)
-        .map(entry => entry.data!);
+        .map(entry => entry.data as LMDeviceGroup);
 
       return {
         success: result.success,
@@ -332,8 +349,10 @@ export async function handleDeviceGroupTool(
         results: result.results.map(entry => ({
           index: entry.index,
           success: entry.success,
-          group: entry.data ?? null,
-          error: entry.error
+          group: entry.data ? (entry.data as LMDeviceGroup) : null,
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }
@@ -361,23 +380,24 @@ export async function handleDeviceGroupTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to update device group');
+          throwBatchFailure('Device group update', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for updated device group.');
         }
-        const updatedGroup = singleResult.data;
+        const updatedGroup = singleResult.data as LMDeviceGroup;
         sessionContext.variables.lastUpdatedDeviceGroup = updatedGroup;
         return {
           success: true,
           group: updatedGroup,
-          message: `Device group '${updatedGroup?.name}' updated successfully.`
+          raw: singleResult.raw ?? updatedGroup,
+          meta: singleResult.meta ?? null
         };
       }
 
       sessionContext.variables.lastUpdatedDeviceGroups = result.results
         .filter(entry => entry.success && entry.data)
-        .map(entry => entry.data!);
+        .map(entry => entry.data as LMDeviceGroup);
 
       return {
         success: result.success,
@@ -385,8 +405,10 @@ export async function handleDeviceGroupTool(
         results: result.results.map(entry => ({
           index: entry.index,
           success: entry.success,
-          group: entry.data ?? null,
-          error: entry.error
+          group: entry.data ? (entry.data as LMDeviceGroup) : null,
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }
@@ -413,17 +435,18 @@ export async function handleDeviceGroupTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to delete device group');
+          throwBatchFailure('Device group delete', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for deleted device group.');
         }
-        const deletedGroup = singleResult.data;
+        const deletedGroup = singleResult.data as { groupId: number; deleteChildren: boolean };
         sessionContext.variables.lastDeletedDeviceGroupId = deletedGroup.groupId;
         return {
           success: true,
           groupId: deletedGroup.groupId,
-          message: `Device group ${deletedGroup.groupId} deleted successfully.`
+          raw: singleResult.raw ?? deletedGroup,
+          meta: singleResult.meta ?? null
         };
       }
 
@@ -438,7 +461,9 @@ export async function handleDeviceGroupTool(
           index: entry.index,
           success: entry.success,
           groupId: entry.data?.groupId ?? null,
-          error: entry.error
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }

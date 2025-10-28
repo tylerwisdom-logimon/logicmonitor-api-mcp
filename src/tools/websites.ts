@@ -1,4 +1,4 @@
-import { Tool } from '@modelcontextprotocol/sdk/types.js';
+import { ErrorCode, McpError, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { LogicMonitorClient } from '../api/client.js';
 import {
   listWebsitesSchema,
@@ -10,6 +10,9 @@ import {
 import { batchProcessor } from '../utils/batchProcessor.js';
 import { extractBatchOptions, isBatchInput, normalizeToArray } from '../utils/schemaHelpers.js';
 import { SessionContext } from '../session/sessionManager.js';
+import { sanitizeFields } from '../utils/fieldMetadata.js';
+import { throwBatchFailure } from '../utils/batchUtils.js';
+import type { LMWebsite } from '../types/logicmonitor.js';
 
 export const websiteTools: Tool[] = [
   {
@@ -287,36 +290,48 @@ export async function handleWebsiteTool(
   switch (toolName) {
     case 'lm_list_websites': {
       const validated = await listWebsitesSchema.validateAsync(args);
-      const result = await client.listWebsites(validated);
-      const payload = {
-        total: result.total ?? result.items?.length ?? 0,
-        items: result.items ?? [],
-        searchId: result.searchId,
+      const { fields, ...rest } = validated;
+      const fieldConfig = sanitizeFields('website', fields);
+
+      if (fieldConfig.invalid.length > 0) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown website field(s): ${fieldConfig.invalid.join(', ')}`
+        );
+      }
+
+      const apiResult = await client.listWebsites({
+        ...rest,
+        fields: fieldConfig.fieldsParam
+      });
+
+      const response = {
+        total: apiResult.total,
+        items: apiResult.items as LMWebsite[],
         request: {
-          filter: validated.filter,
-          fields: validated.fields,
-          collectorIds: validated.collectorIds,
-          offset: validated.offset ?? 0,
-          size: validated.size ?? (result.items?.length ?? 0)
-        }
+          ...rest,
+          fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        },
+        meta: apiResult.meta,
+        raw: apiResult.raw
       };
 
-      sessionContext.variables.lastWebsiteList = payload.items;
-      sessionContext.variables.lastWebsiteListMetadata = payload.request;
+      sessionContext.variables.lastWebsiteList = response;
 
-      return {
-        ...payload,
-        summary: `Retrieved ${payload.items.length} website(s).`
-      };
+      return response;
     }
 
     case 'lm_get_website': {
       const validated = await getWebsiteSchema.validateAsync(args);
       const websiteResult = await client.getWebsite(validated.websiteId);
-      const website = websiteResult.data;
-      sessionContext.variables.lastWebsite = website;
+      const response = {
+        website: websiteResult.data,
+        meta: websiteResult.meta,
+        raw: websiteResult.raw
+      };
+      sessionContext.variables.lastWebsite = response;
       sessionContext.variables.lastWebsiteId = validated.websiteId;
-      return website;
+      return response;
     }
 
     case 'lm_create_website': {
@@ -341,23 +356,24 @@ export async function handleWebsiteTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to create website');
+          throwBatchFailure('Website create', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for created website.');
         }
-        const websiteCreated = singleResult.data;
+        const websiteCreated = singleResult.data as LMWebsite;
         sessionContext.variables.lastCreatedWebsite = websiteCreated;
         return {
           success: true,
           website: websiteCreated,
-          message: `Website '${websiteCreated?.name}' created successfully.`
+          raw: singleResult.raw ?? websiteCreated,
+          meta: singleResult.meta ?? null
         };
       }
 
       sessionContext.variables.lastCreatedWebsites = result.results
         .filter(entry => entry.success && entry.data)
-        .map(entry => entry.data!);
+        .map(entry => entry.data as LMWebsite);
 
       return {
         success: result.success,
@@ -365,8 +381,10 @@ export async function handleWebsiteTool(
         results: result.results.map(entry => ({
           index: entry.index,
           success: entry.success,
-          website: entry.data ?? null,
-          error: entry.error
+          website: entry.data ? (entry.data as LMWebsite) : null,
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }
@@ -394,23 +412,24 @@ export async function handleWebsiteTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to update website');
+          throwBatchFailure('Website update', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for updated website.');
         }
-        const websiteUpdated = singleResult.data;
+        const websiteUpdated = singleResult.data as LMWebsite;
         sessionContext.variables.lastUpdatedWebsite = websiteUpdated;
         return {
           success: true,
           website: websiteUpdated,
-          message: `Website '${websiteUpdated?.name}' updated successfully.`
+          raw: singleResult.raw ?? websiteUpdated,
+          meta: singleResult.meta ?? null
         };
       }
 
       sessionContext.variables.lastUpdatedWebsites = result.results
         .filter(entry => entry.success && entry.data)
-        .map(entry => entry.data!);
+        .map(entry => entry.data as LMWebsite);
 
       return {
         success: result.success,
@@ -419,7 +438,9 @@ export async function handleWebsiteTool(
           index: entry.index,
           success: entry.success,
           website: entry.data ?? null,
-          error: entry.error
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }
@@ -446,23 +467,24 @@ export async function handleWebsiteTool(
       if (!isBatch) {
         const singleResult = result.results[0];
         if (!singleResult.success) {
-          throw new Error(singleResult.error || 'Failed to delete website');
+          throwBatchFailure('Website delete', singleResult);
         }
         if (!singleResult.data) {
           throw new Error('No response data returned for deleted website.');
         }
-        const deletedWebsite = singleResult.data;
+        const deletedWebsite = singleResult.data as { websiteId: number };
         sessionContext.variables.lastDeletedWebsiteId = deletedWebsite.websiteId;
         return {
           success: true,
           websiteId: deletedWebsite.websiteId,
-          message: `Website ${deletedWebsite.websiteId} deleted successfully.`
+          raw: singleResult.raw ?? deletedWebsite,
+          meta: singleResult.meta ?? null
         };
       }
 
       sessionContext.variables.lastDeletedWebsiteIds = result.results
         .filter(entry => entry.success && entry.data)
-        .map(entry => entry.data!.websiteId);
+        .map(entry => (entry.data as { websiteId: number }).websiteId);
 
       return {
         success: result.success,
@@ -471,7 +493,9 @@ export async function handleWebsiteTool(
           index: entry.index,
           success: entry.success,
           websiteId: entry.data?.websiteId ?? null,
-          error: entry.error
+          error: entry.error,
+          raw: entry.raw ?? null,
+          meta: entry.meta ?? null
         }))
       };
     }
