@@ -38,7 +38,7 @@ export const deviceGroupTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields.'
+          description: 'Comma-separated list of fields to return. Use "*" for all fields. See resource health://logicmonitor/fields/device_group for the complete list.'
         },
         parentId: {
           type: 'number',

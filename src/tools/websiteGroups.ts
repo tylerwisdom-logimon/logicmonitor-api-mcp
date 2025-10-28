@@ -38,7 +38,7 @@ export const websiteGroupTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields.'
+          description: 'Comma-separated list of fields to return. Use "*" for all fields. See resource health://logicmonitor/fields/website_group for the complete list.'
         }
       },
       additionalProperties: false

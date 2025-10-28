@@ -39,7 +39,7 @@ export const deviceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return (e.g., "id,displayName,hostStatus"). Use "*" for all fields.'
+          description: 'Comma-separated list of fields to return (e.g., "id,displayName,hostStatus"). Use "*" for all fields. See resource health://logicmonitor/fields/device for the complete list.'
         },
         start: {
           type: 'number',
@@ -73,7 +73,7 @@ export const deviceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields.'
+          description: 'Comma-separated list of fields to return. Use "*" for all fields. See resource health://logicmonitor/fields/device for the complete list.'
         },
         start: {
           type: 'number',

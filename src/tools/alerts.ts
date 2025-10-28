@@ -127,7 +127,7 @@ export const alertTools = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields or Omit to return curated fields. Unless otherwise specified, you should default to using all fields.'
+          description: 'Comma-separated list of fields to return. Use "*" for all fields or omit to return curated fields. See resource health://logicmonitor/fields/alert for the complete list.'
         },
         size: {
           type: 'number',
