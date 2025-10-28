@@ -58,7 +58,9 @@ export function sanitizeFields(resource: ResourceKey, fields?: string | null) {
   const requested = parseFieldList(fields);
   const { applied, invalid } = validateRequestedFields(resource, requested);
   const includeAll = applied.includes('*') || applied.length === 0;
-  const normalizedApplied = includeAll ? [] : applied;
+  const base = includeAll ? [] : applied;
+  const required = requiredFields.get(resource) ?? [];
+  const normalizedApplied = includeAll ? [] : Array.from(new Set([...base, ...required]));
   const fieldsParam = includeAll ? undefined : normalizedApplied.join(',');
 
   return {
@@ -69,3 +71,12 @@ export function sanitizeFields(resource: ResourceKey, fields?: string | null) {
     invalid
   };
 }
+
+const requiredFields = new Map<ResourceKey, string[]>([
+  ['device', ['id']],
+  ['deviceGroup', ['id']],
+  ['website', ['id']],
+  ['websiteGroup', ['id']],
+  ['collector', ['id']],
+  ['alert', ['id']]
+]);
