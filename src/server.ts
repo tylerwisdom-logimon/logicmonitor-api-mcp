@@ -65,7 +65,8 @@ export async function createServer(config: ServerConfig = {}) {
   const mcpServer = new McpServer(
     {
       name: config.name || APP_NAME,
-      version: config.version || APP_VERSION
+      version: config.version || APP_VERSION,
+      capabilities: { resources: {}, tools: {} }
     },
     {
       instructions
@@ -155,7 +156,15 @@ export async function createServer(config: ServerConfig = {}) {
                 },
                 null,
                 2
-              )
+              ),
+              title: `LogicMonitor ${mapping.resource} fields`,
+              description: mapping.description,
+              name: `logicmonitor-${mapping.resource}-fields`,
+              annotations: {
+                audience: ["assistant"],
+                priority: 1,
+                lastModified: new Date().toISOString()
+              }
             }
           ]
         };
