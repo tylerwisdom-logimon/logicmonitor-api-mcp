@@ -855,6 +855,61 @@ export const resourceTools: Tool[] = [
       },
       required: ['operation']
     }
+  },
+  {
+    name: 'lm_session',
+    description: 'Manage session context including variables, history, and results. Supports list (history), get (context/variable), create (set variable), update (update variable), and delete (clear context) operations.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list', 'get', 'create', 'update', 'delete'],
+          description: 'The operation to perform on the session'
+        },
+        // List operation (history)
+        limit: {
+          type: 'number',
+          minimum: 1,
+          maximum: 50,
+          description: 'Limit the number of history entries returned (default: 10, max: 50). Used with list operation.'
+        },
+        // Get operation (context or variable)
+        key: {
+          type: 'string',
+          description: 'Name of the variable to read. If provided with get operation, returns specific variable. If omitted, returns full session context.'
+        },
+        historyLimit: {
+          type: 'number',
+          minimum: 1,
+          maximum: 50,
+          description: 'Maximum number of history entries to return in context (default: 10, max: 50). Used with get operation when key is not provided.'
+        },
+        includeResults: {
+          type: 'boolean',
+          description: 'When true, include the full lastResults object instead of only the keys. Used with get operation when key is not provided.'
+        },
+        // Create/Update operations (set variable)
+        value: {
+          description: 'Value to store (any JSON-serializable data). Required for create and update operations.',
+          anyOf: [
+            { type: 'string' },
+            { type: 'number' },
+            { type: 'boolean' },
+            { type: 'object' },
+            { type: 'array', items: {} },
+            { type: 'null' }
+          ]
+        },
+        // Delete operation (clear context)
+        scope: {
+          type: 'string',
+          enum: ['variables', 'history', 'results', 'all'],
+          description: 'Which part of the context to clear (default: all). Used with delete operation.'
+        }
+      },
+      required: ['operation']
+    }
   }
 ];
 

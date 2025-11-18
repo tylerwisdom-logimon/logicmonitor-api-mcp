@@ -13,7 +13,6 @@ import { APP_DESCRIPTION, APP_NAME, APP_VERSION } from './appInfo.js';
 import { LogicMonitorClient } from './api/client.js';
 import { LogicMonitorApiError } from './api/errors.js';
 import { resourceTools } from './tools/resourceTools.js';
-import { sessionTools, handleSessionTool } from './tools/session.js';
 import { listPrompts, getPrompt, getPromptContent } from './tools/prompts.js';
 import { SessionManager } from './session/sessionManager.js';
 import { metricsManager } from './metrics/metricsManager.js';
@@ -28,6 +27,7 @@ import { UserHandler } from './resources/user/UserHandler.js';
 import { DashboardHandler } from './resources/dashboard/DashboardHandler.js';
 import { CollectorGroupHandler } from './resources/collectorGroup/CollectorGroupHandler.js';
 import { DeviceDataHandler } from './resources/deviceData/DeviceDataHandler.js';
+import { SessionHandler } from './resources/session/SessionHandler.js';
 import type { ResourceType } from './types/operations.js';
 
 export interface ServerConfig {
@@ -258,8 +258,7 @@ export async function createServer(config: ServerConfig = {}) {
 
 
   const allTools = [
-    ...resourceTools,
-    ...sessionTools
+    ...resourceTools
   ];
 
   mcpServer.server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -302,11 +301,20 @@ export async function createServer(config: ServerConfig = {}) {
     logger.info('Tool call received', { tool: name, args, sessionId });
 
     try {
-      const isSessionTool = sessionTools.some(tool => tool.name === name);
+      // Route to appropriate resource handler
+      const resourceType = getResourceTypeFromToolName(name);
+      if (!resourceType) {
+        throw new McpError(
+          ErrorCode.MethodNotFound,
+          `Unknown tool: ${name}`
+        );
+      }
+
+      // Session tools don't need credentials, but we still create a client for consistency
       const credentials = config.credentials || {};
       let client: LogicMonitorClient | undefined;
 
-      if (!isSessionTool) {
+      if (resourceType !== 'session') {
         const { lm_account, lm_bearer_token } = credentials;
         if (!lm_account || !lm_bearer_token) {
           throw new McpError(
@@ -315,33 +323,14 @@ export async function createServer(config: ServerConfig = {}) {
           );
         }
         client = new LogicMonitorClient(lm_account, lm_bearer_token, logger);
-      }
-
-      let result: unknown;
-
-      if (isSessionTool) {
-        result = await handleSessionTool(name, args, sessionManager, sessionId);
       } else {
-        // Route to appropriate resource handler
-        const resourceType = getResourceTypeFromToolName(name);
-        if (!resourceType) {
-        throw new McpError(
-          ErrorCode.MethodNotFound,
-          `Unknown tool: ${name}`
-        );
-        }
-
-        if (!client) {
-          throw new McpError(
-            ErrorCode.InternalError,
-            'Client not initialized for resource operation'
-          );
-        }
-
-        const handler = createResourceHandler(resourceType, client, sessionManager, sessionId);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        result = await handler.handleOperation(args as any);
+        // For session operations, create a dummy client (not used but required by handler signature)
+        client = new LogicMonitorClient('dummy', 'dummy', logger);
       }
+
+      const handler = createResourceHandler(resourceType, client, sessionManager, sessionId);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await handler.handleOperation(args as any);
 
       sessionManager.recordResult(sessionId, name, args, result);
       metricsManager.recordSuccess(name, summarizeResultForMetrics(result));
@@ -409,7 +398,8 @@ export async function createServer(config: ServerConfig = {}) {
       'lm_user': 'user',
       'lm_dashboard': 'dashboard',
       'lm_collector_group': 'collectorGroup',
-      'lm_device_data': 'deviceData'
+      'lm_device_data': 'deviceData',
+      'lm_session': 'session'
     };
     return mapping[toolName] || null;
   }
@@ -444,6 +434,8 @@ export async function createServer(config: ServerConfig = {}) {
         return new CollectorGroupHandler(client, sessionManager, sessionId);
       case 'deviceData':
         return new DeviceDataHandler(client, sessionManager, sessionId);
+      case 'session':
+        return new SessionHandler(client, sessionManager, sessionId);
       default:
         throw new McpError(
           ErrorCode.MethodNotFound,
