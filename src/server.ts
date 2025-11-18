@@ -2,6 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListPromptsRequestSchema,
+  GetPromptRequestSchema,
   TextContent,
   ErrorCode,
   McpError
@@ -12,6 +14,7 @@ import { LogicMonitorClient } from './api/client.js';
 import { LogicMonitorApiError } from './api/errors.js';
 import { resourceTools } from './tools/resourceTools.js';
 import { sessionTools, handleSessionTool } from './tools/session.js';
+import { listPrompts, getPrompt, getPromptContent } from './tools/prompts.js';
 import { SessionManager } from './session/sessionManager.js';
 import { metricsManager } from './metrics/metricsManager.js';
 import { getKnownFields, ResourceKey } from './utils/fieldMetadata.js';
@@ -24,6 +27,7 @@ import { CollectorHandler } from './resources/collector/CollectorHandler.js';
 import { UserHandler } from './resources/user/UserHandler.js';
 import { DashboardHandler } from './resources/dashboard/DashboardHandler.js';
 import { CollectorGroupHandler } from './resources/collectorGroup/CollectorGroupHandler.js';
+import { DeviceDataHandler } from './resources/deviceData/DeviceDataHandler.js';
 import type { ResourceType } from './types/operations.js';
 
 export interface ServerConfig {
@@ -158,6 +162,20 @@ export async function createServer(config: ServerConfig = {}) {
       uri: 'health://logicmonitor/fields/collector_group',
       description: 'Valid fields for lm_collector_group tool.',
       filterExamples: ['name:"*production*"', 'autoBalance:true']
+    },
+    {
+      key: 'deviceDatasource',
+      resource: 'device_datasource',
+      uri: 'health://logicmonitor/fields/device_datasource',
+      description: 'Valid fields for lm_device_data list_datasources operation.',
+      filterExamples: ['dataSourceName:"*CPU*"', 'stopMonitoring:false']
+    },
+    {
+      key: 'deviceDatasourceInstance',
+      resource: 'device_datasource_instance',
+      uri: 'health://logicmonitor/fields/device_datasource_instance',
+      description: 'Valid fields for lm_device_data list_instances operation.',
+      filterExamples: ['name:"*"', 'stopMonitoring:false']
     }
   ];
 
@@ -200,7 +218,8 @@ export async function createServer(config: ServerConfig = {}) {
 
   mcpServer.server.registerCapabilities({
     resources: {},
-    tools: {}
+    tools: {},
+    prompts: {}
   });
 
   mcpServer.server.oninitialized = () => {
@@ -246,6 +265,35 @@ export async function createServer(config: ServerConfig = {}) {
     tools: allTools
   }));
 
+  mcpServer.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+    prompts: listPrompts()
+  }));
+
+  mcpServer.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    const prompt = getPrompt(name);
+    
+    if (!prompt) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        `Unknown prompt: ${name}`
+      );
+    }
+
+    return {
+      description: prompt.description,
+      messages: [
+        {
+          role: 'user',
+          content: {
+            type: 'text',
+            text: getPromptContent(name, args || {})
+          }
+        }
+      ]
+    };
+  });
+
   mcpServer.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
     const sessionId = extra?.sessionId;
@@ -276,10 +324,10 @@ export async function createServer(config: ServerConfig = {}) {
         // Route to appropriate resource handler
         const resourceType = getResourceTypeFromToolName(name);
         if (!resourceType) {
-          throw new McpError(
-            ErrorCode.MethodNotFound,
-            `Unknown tool: ${name}`
-          );
+        throw new McpError(
+          ErrorCode.MethodNotFound,
+          `Unknown tool: ${name}`
+        );
         }
 
         if (!client) {
@@ -358,7 +406,8 @@ export async function createServer(config: ServerConfig = {}) {
       'lm_alert': 'alert',
       'lm_user': 'user',
       'lm_dashboard': 'dashboard',
-      'lm_collector_group': 'collectorGroup'
+      'lm_collector_group': 'collectorGroup',
+      'lm_device_data': 'deviceData'
     };
     return mapping[toolName] || null;
   }
@@ -391,6 +440,8 @@ export async function createServer(config: ServerConfig = {}) {
         return new DashboardHandler(client, sessionManager, sessionId);
       case 'collectorGroup':
         return new CollectorGroupHandler(client, sessionManager, sessionId);
+      case 'deviceData':
+        return new DeviceDataHandler(client, sessionManager, sessionId);
       default:
         throw new McpError(
           ErrorCode.MethodNotFound,

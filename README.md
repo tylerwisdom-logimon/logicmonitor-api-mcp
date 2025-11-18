@@ -4,8 +4,10 @@ A Model Context Protocol (MCP) server that provides secure access to the LogicMo
 
 ## Features
 
-- **Comprehensive Resource Management**: Devices, device groups, websites, website groups, collectors, alerts, users, dashboards, and collector groups
+- **Comprehensive Resource Management**: Devices, device groups, websites, website groups, collectors, alerts, users, dashboards, collector groups, and device metrics
+- **Device Metrics & Data**: Retrieve monitoring data including datasources, instances, and time-series metrics
 - **Batch Operations**: Process multiple items efficiently with rate limiting and error handling
+- **Guided Workflows**: Built-in prompts for complex tasks like exporting device metrics
 - **Secure Authentication**: Credentials passed per-request, never stored
 - **Flexible Deployment**: Supports both stdio (local) and HTTP (remote) transports
 - **Natural Language Interface**: Designed for AI assistants like Claude
@@ -145,7 +147,7 @@ When no `X-LM-*` headers are provided, the server falls back to `LM_ACCOUNT` and
 
 ## Available Tools
 
-The server provides **9 resource-based tools** that handle all CRUD operations through an `operation` parameter:
+The server provides **10 resource-based tools** that handle all CRUD operations through an `operation` parameter:
 
 ### Core Resource Tools
 
@@ -215,12 +217,50 @@ Manage collector groups:
 - **update** - Update collector groups (single or batch)
 - **delete** - Delete collector groups (single or batch)
 
+#### `lm_device_data`
+Retrieve device monitoring data including datasources, instances, and time-series metrics:
+- **list_datasources** - List datasources for a device (supports wildcard include/exclude filters)
+- **list_instances** - List instances for a specific datasource
+- **get_data** - Retrieve metric data for one or more instances (supports batch retrieval)
+
+Key features:
+- Wildcard filtering for datasources (e.g., `datasourceIncludeFilter: "CPU*"`)
+- Batch instance data retrieval (e.g., all CPU cores at once)
+- Flexible time ranges (ISO 8601 dates or Unix epochs, defaults to last 24 hours)
+- Formatted output with timestamps and metric values
+
 ### Session Utilities
 - `lm_get_session_context` - View stored variables, last results, and recent history
 - `lm_set_session_variable` - Persist custom key/value pairs across tool calls
 - `lm_get_session_variable` - Retrieve stored session values
 - `lm_clear_session_context` - Reset session state
 - `lm_list_session_history` - Inspect recent tool invocations
+
+## Available Prompts
+
+The server provides guided workflows for complex multi-step tasks:
+
+### `export-device-metrics`
+A comprehensive workflow that guides you through exporting monitoring data from LogicMonitor devices.
+
+**Arguments:**
+- `device_identifier` (required) - Device ID, name, or filter (e.g., "123", "displayName:*prod*")
+- `datasource_filter` (optional) - Wildcard filter for datasources (e.g., "CPU*", "*Memory*")
+- `time_range_hours` (optional) - Hours of historical data to retrieve (default: 24)
+
+**Workflow Steps:**
+1. Identify target device(s)
+2. List available datasources (with optional filtering)
+3. Enumerate instances for each datasource
+4. Retrieve metric data for instances
+5. Format and present results
+
+**Example Usage:**
+```
+"Use the export-device-metrics prompt to get CPU and memory data for device 123 over the last 48 hours"
+```
+
+The prompt will guide the AI through each step, ensuring proper data collection and formatting.
 
 ## Key Features
 
@@ -311,6 +351,17 @@ Three ways to perform batch operations:
 "Acknowledge the first alert with comment 'Investigating'"
 
 "Add a note to alert 12345 saying 'Fixed in deploy #456'"
+```
+
+### Retrieving Device Metrics
+```
+"List all datasources for device 123"
+
+"Show me CPU metrics for device 123 over the last 24 hours"
+
+"Get memory usage data for all instances on device 456 for the past week"
+
+"Use the export-device-metrics prompt to get all CPU and Memory data for production servers"
 ```
 
 ## Development

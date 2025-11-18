@@ -390,3 +390,67 @@ export interface LMCollectorGroup {
     value: string;
   }>;
 }
+
+export interface LMDeviceDatasource {
+  id: number;
+  deviceId: number;
+  deviceName: string;
+  deviceDisplayName: string;
+  dataSourceId: number;
+  dataSourceName: string;
+  dataSourceDisplayName: string;
+  dataSourceType: string;
+  monitoringInstanceNumber: number;
+  instanceNumber: number;
+  stopMonitoring: boolean;
+  disableAlerting: boolean;
+  assignedOn: number;
+  createdOn: number;
+  updatedOn: number;
+  nextAutoDiscoveryOn: number;
+  status: string;
+  alertStatus: string;
+  sdtStatus: string;
+}
+
+export interface LMDeviceDatasourceInstance {
+  id: number;
+  deviceId: number;
+  deviceDataSourceId: number;
+  name: string;
+  displayName: string;
+  description: string;
+  wildValue: string;
+  wildValue2: string;
+  groupName: string;
+  stopMonitoring: boolean;
+  disableAlerting: boolean;
+  alertStatus: string;
+  sdtStatus: string;
+  alertDisableStatus: string;
+  customProperties: Array<{
+    name: string;
+    value: string;
+  }>;
+}
+
+export interface LMDeviceData {
+  time: number[];
+  values: number[][];
+  dataPoints: string[];
+  nextPageParams?: string;
+}
+
+export interface LMDeviceDataFormatted {
+  deviceId: number;
+  deviceName: string;
+  datasourceId: number;
+  datasourceName: string;
+  instanceId: number;
+  instanceName: string;
+  dataPoints: Array<{
+    timestampEpoch: number;
+    timestampUTC: string;
+    [datapoint: string]: number | string;
+  }>;
+}

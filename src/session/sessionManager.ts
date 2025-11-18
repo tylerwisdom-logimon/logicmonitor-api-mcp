@@ -1,7 +1,7 @@
 export type SessionScope = 'variables' | 'history' | 'results' | 'all';
 
-export type ResourceType = 'device' | 'deviceGroup' | 'website' | 'websiteGroup' | 'collector' | 'alert' | 'user' | 'dashboard' | 'collectorGroup';
-export type OperationType = 'list' | 'get' | 'create' | 'update' | 'delete';
+export type ResourceType = 'device' | 'deviceGroup' | 'website' | 'websiteGroup' | 'collector' | 'alert' | 'user' | 'dashboard' | 'collectorGroup' | 'deviceData';
+export type OperationType = 'list' | 'get' | 'create' | 'update' | 'delete' | 'list_datasources' | 'list_instances' | 'get_data';
 
 export interface SessionHistoryEntry {
   timestamp: string;
@@ -259,7 +259,8 @@ export class SessionManager {
       alert: 'Alert',
       user: 'User',
       dashboard: 'Dashboard',
-      collectorGroup: 'CollectorGroup'
+      collectorGroup: 'CollectorGroup',
+      deviceData: 'DeviceData'
     };
     return names[resourceType];
   }

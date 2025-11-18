@@ -12,6 +12,9 @@ import {
   LMAPIToken,
   LMDashboard,
   LMCollectorGroup,
+  LMDeviceDatasource,
+  LMDeviceDatasourceInstance,
+  LMDeviceData,
   LMPaginatedResponse,
   LMAlertPaginatedResponse,
   LMErrorResponse 
@@ -1761,6 +1764,174 @@ export class LogicMonitorClient {
     
     return {
       data: undefined,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  /**
+   * List device datasources
+   */
+  async listDeviceDatasources(deviceId: number, params?: {
+    filter?: string;
+    size?: number;
+    offset?: number;
+    fields?: string;
+  }): Promise<ApiListResult<LMDeviceDatasource>> {
+    const sanitizedParams = params ? {
+      ...params,
+      fields: params.fields && params.fields !== '*' ? params.fields : undefined
+    } : {};
+
+    return this.paginateAll<LMDeviceDatasource>(`/device/devices/${deviceId}/devicedatasources`, sanitizedParams);
+  }
+
+  /**
+   * Get a specific device datasource
+   */
+  async getDeviceDatasource(deviceId: number, datasourceId: number, params?: {
+    fields?: string;
+  }): Promise<ApiResult<LMDeviceDatasource>> {
+    const queryParams = params?.fields && params.fields !== '*' ? { fields: params.fields } : {};
+
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/device/devices/${deviceId}/devicedatasources/${datasourceId}`,
+      method: 'get',
+      params: queryParams
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.get(
+      `/device/devices/${deviceId}/devicedatasources/${datasourceId}`,
+      { params: queryParams }
+    );
+    const duration = performance.now() - startedAt;
+
+    if (!response.data || typeof response.data !== 'object') {
+      throw new LogicMonitorApiError(
+        `Device datasource ${datasourceId} for device ${deviceId} not found or returned empty response`,
+        {
+          status: response.status,
+          requestId: this.extractRequestId(response.headers as AxiosHeaders),
+          requestUrl: requestContext.endpoint
+        }
+      );
+    }
+
+    return {
+      data: response.data.data || response.data,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  /**
+   * List device datasource instances
+   */
+  async listDeviceDatasourceInstances(deviceId: number, datasourceId: number, params?: {
+    filter?: string;
+    size?: number;
+    offset?: number;
+    fields?: string;
+  }): Promise<ApiListResult<LMDeviceDatasourceInstance>> {
+    const sanitizedParams = params ? {
+      ...params,
+      fields: params.fields && params.fields !== '*' ? params.fields : undefined
+    } : {};
+
+    return this.paginateAll<LMDeviceDatasourceInstance>(
+      `/device/devices/${deviceId}/devicedatasources/${datasourceId}/instances`,
+      sanitizedParams
+    );
+  }
+
+  /**
+   * Get a specific device datasource instance
+   */
+  async getDeviceDatasourceInstance(
+    deviceId: number,
+    datasourceId: number,
+    instanceId: number,
+    params?: { fields?: string }
+  ): Promise<ApiResult<LMDeviceDatasourceInstance>> {
+    const queryParams = params?.fields && params.fields !== '*' ? { fields: params.fields } : {};
+
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/device/devices/${deviceId}/devicedatasources/${datasourceId}/instances/${instanceId}`,
+      method: 'get',
+      params: queryParams
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.get(
+      `/device/devices/${deviceId}/devicedatasources/${datasourceId}/instances/${instanceId}`,
+      { params: queryParams }
+    );
+    const duration = performance.now() - startedAt;
+
+    if (!response.data || typeof response.data !== 'object') {
+      throw new LogicMonitorApiError(
+        `Device datasource instance ${instanceId} not found or returned empty response`,
+        {
+          status: response.status,
+          requestId: this.extractRequestId(response.headers as AxiosHeaders),
+          requestUrl: requestContext.endpoint
+        }
+      );
+    }
+
+    return {
+      data: response.data.data || response.data,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  /**
+   * Get device data (metrics) for a specific datasource instance
+   */
+  async getDeviceData(
+    deviceId: number,
+    datasourceId: number,
+    instanceId: number,
+    params?: {
+      start?: number;
+      end?: number;
+      datapoints?: string;
+      format?: string;
+      aggregate?: string;
+    }
+  ): Promise<ApiResult<LMDeviceData>> {
+    const queryParams = Object.fromEntries(
+      Object.entries(params || {}).filter(([, value]) => value !== undefined && value !== null)
+    );
+
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/device/devices/${deviceId}/devicedatasources/${datasourceId}/instances/${instanceId}/data`,
+      method: 'get',
+      params: queryParams
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.get(
+      `/device/devices/${deviceId}/devicedatasources/${datasourceId}/instances/${instanceId}/data`,
+      { params: queryParams }
+    );
+    const duration = performance.now() - startedAt;
+
+    if (!response.data || typeof response.data !== 'object') {
+      throw new LogicMonitorApiError(
+        `Device data for instance ${instanceId} not found or returned empty response`,
+        {
+          status: response.status,
+          requestId: this.extractRequestId(response.headers as AxiosHeaders),
+          requestUrl: requestContext.endpoint
+        }
+      );
+    }
+
+    return {
+      data: response.data,
       raw: response.data,
       meta: this.createResponseMeta(response, requestContext, duration)
     };

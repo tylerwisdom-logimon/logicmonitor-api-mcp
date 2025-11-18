@@ -740,6 +740,121 @@ export const resourceTools: Tool[] = [
       },
       required: ['operation']
     }
+  },
+  {
+    name: 'lm_device_data',
+    description: 'Retrieve device monitoring data including datasources, instances, and metrics. Supports three operations: list_datasources (list datasources for device), list_instances (list instances for datasource), get_data (retrieve metric data for instances). Supports batch operations for multiple instances.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        operation: {
+          type: 'string',
+          enum: ['list_datasources', 'list_instances', 'get_data'],
+          description: 'The operation to perform: list_datasources, list_instances, or get_data'
+        },
+        // list_datasources parameters
+        deviceId: {
+          type: 'number',
+          description: 'Device ID (required for list_datasources and list_instances)'
+        },
+        deviceIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of device IDs for batch list_datasources operations'
+        },
+        datasourceIncludeFilter: {
+          type: 'string',
+          description: 'Wildcard filter to include datasources (e.g., "CPU*", "*Memory*"). Only for list_datasources.'
+        },
+        datasourceExcludeFilter: {
+          type: 'string',
+          description: 'Wildcard filter to exclude datasources (e.g., "Test*"). Only for list_datasources.'
+        },
+        // list_instances parameters
+        datasourceId: {
+          type: 'number',
+          description: 'Datasource ID (required for list_instances and get_data)'
+        },
+        datasourceIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of datasource IDs for batch operations'
+        },
+        datasourceName: {
+          type: 'string',
+          description: 'Datasource name for lookup (alternative to datasourceId)'
+        },
+        // get_data parameters
+        instanceId: {
+          type: 'number',
+          description: 'Instance ID (required for get_data unless instanceIds provided)'
+        },
+        instanceIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of instance IDs for batch metric retrieval (e.g., all CPU cores)'
+        },
+        instanceName: {
+          type: 'string',
+          description: 'Instance name for lookup (alternative to instanceId)'
+        },
+        startDate: {
+          type: 'string',
+          description: 'Start date/time in ISO 8601 format (e.g., "2025-01-15T00:00:00Z"). Defaults to 24 hours ago.'
+        },
+        endDate: {
+          type: 'string',
+          description: 'End date/time in ISO 8601 format. Defaults to now.'
+        },
+        start: {
+          type: 'number',
+          description: 'Start time as Unix epoch (alternative to startDate)'
+        },
+        end: {
+          type: 'number',
+          description: 'End time as Unix epoch (alternative to endDate)'
+        },
+        datapoints: {
+          type: ['string', 'array'],
+          description: 'Comma-separated datapoint names or array of names to retrieve. Omit for all datapoints.'
+        },
+        format: {
+          type: 'string',
+          description: 'Data format (optional)'
+        },
+        aggregate: {
+          type: 'string',
+          description: 'Aggregation method (optional)'
+        },
+        // Common parameters
+        filter: {
+          type: 'string',
+          description: 'LogicMonitor filter string for list operations'
+        },
+        fields: {
+          type: 'string',
+          description: 'Comma-separated list of fields to return'
+        },
+        size: {
+          type: 'number',
+          minimum: 1,
+          maximum: 1000,
+          description: 'Results per page for list operations'
+        },
+        offset: {
+          type: 'number',
+          minimum: 0,
+          description: 'Pagination offset for list operations'
+        },
+        // Batch operation parameters
+        applyToPrevious: {
+          type: 'string',
+          description: 'Reference to previous operation result for batch operations'
+        },
+        batchOptions: batchOptionsSchema
+      },
+      required: ['operation']
+    }
   }
 ];
 
