@@ -39,7 +39,7 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMWebsite>> {
     const validated = validateListWebsites(args);
-    const { fields, filter, size, offset, collectorIds } = validated;
+    const { fields, filter, size, offset, autoPaginate, collectorIds } = validated;
     const fieldConfig = sanitizeFields('website', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -51,6 +51,7 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
       filter,
       size,
       offset,
+      autoPaginate,
       collectorIds
     });
 

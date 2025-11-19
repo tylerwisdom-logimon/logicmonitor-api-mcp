@@ -49,7 +49,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMDevice>> {
     const validated = validateListDevices(args);
-    const { fields, filter, size, offset, start, end, netflowFilter, includeDeletedResources } = validated;
+    const { fields, filter, size, offset, autoPaginate, start, end, netflowFilter, includeDeletedResources } = validated;
     const fieldConfig = sanitizeFields('device', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -64,6 +64,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       filter,
       size,
       offset,
+      autoPaginate,
       start,
       end,
       netflowFilter,
@@ -78,7 +79,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
         filter,
         size,
         offset,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw
@@ -126,7 +127,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       data: apiResult.data,
       request: {
         deviceId,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(','),
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(','),
         start,
         end,
         netflowFilter,

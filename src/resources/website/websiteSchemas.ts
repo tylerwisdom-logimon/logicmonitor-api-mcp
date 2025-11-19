@@ -18,6 +18,7 @@ export function validateListWebsites(args: unknown) {
     size: Joi.number().min(1).max(1000).optional(),
     offset: Joi.number().min(0).optional(),
     fields: Joi.string().optional(),
+    autoPaginate: Joi.boolean().optional(),
     collectorIds: Joi.string().optional()
   }).unknown(false);
 
@@ -63,11 +64,34 @@ export function validateCreateWebsite(args: unknown) {
     ).optional(),
     steps: Joi.array().items(
       Joi.object({
-        url: Joi.string().required(),
+        type: Joi.string().optional(),
+        name: Joi.string().optional(),
+        description: Joi.string().allow('').optional(),
+        enable: Joi.boolean().optional(),
+        label: Joi.string().allow('').optional(),
+        HTTPHeaders: Joi.string().allow('').optional(),
+        followRedirection: Joi.boolean().optional(),
+        HTTPBody: Joi.string().allow('').optional(),
         HTTPMethod: Joi.string().optional(),
-        statusCode: Joi.string().optional(),
-        description: Joi.string().optional()
-      })
+        postDataEditType: Joi.any().optional(),
+        fullpageLoad: Joi.boolean().optional(),
+        requireAuth: Joi.boolean().optional(),
+        auth: Joi.any().optional(),
+        timeout: Joi.number().optional(),
+        HTTPVersion: Joi.string().optional(),
+        schema: Joi.string().optional(),
+        url: Joi.string().allow('').optional(),
+        matchType: Joi.string().optional(),
+        keyword: Joi.string().allow('').optional(),
+        path: Joi.string().allow('').optional(),
+        invertMatch: Joi.boolean().optional(),
+        statusCode: Joi.string().allow('').optional(),
+        reqScript: Joi.string().allow('').optional(),
+        reqType: Joi.string().optional(),
+        respType: Joi.string().optional(),
+        respScript: Joi.string().allow('').optional(),
+        useDefaultRoot: Joi.boolean().optional()
+      }).unknown(true)
     ).optional()
   }).unknown(true);
 

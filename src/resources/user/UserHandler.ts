@@ -49,7 +49,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMUser>> {
     const validated = validateListUsers(args);
-    const { fields, filter, size, offset } = validated;
+    const { fields, filter, size, offset, autoPaginate } = validated;
     const fieldConfig = sanitizeFields('user', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -63,7 +63,8 @@ export class UserHandler extends ResourceHandler<LMUser> {
       fields: fieldConfig.fieldsParam,
       filter,
       size,
-      offset
+      offset,
+      autoPaginate
     });
 
     const result: OperationResult<LMUser> = {
@@ -74,7 +75,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
         filter,
         size,
         offset,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw
@@ -113,7 +114,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
       data: apiResult.data,
       request: {
         userId,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw

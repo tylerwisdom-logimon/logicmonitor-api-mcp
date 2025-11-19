@@ -58,6 +58,7 @@ export function validateListDevices(args: unknown) {
     size: Joi.number().min(1).max(1000).optional(),
     offset: Joi.number().min(0).optional(),
     fields: Joi.string().optional(),
+    autoPaginate: Joi.boolean().optional(),
     start: Joi.number().optional(),
     end: Joi.number().optional(),
     netflowFilter: Joi.string().optional(),

@@ -42,7 +42,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMAlert>> {
     const validated = validateListAlerts(args);
-    const { fields, filter, size, offset, sort, needMessage, customColumns } = validated;
+    const { fields, filter, size, offset, autoPaginate, sort, needMessage, customColumns } = validated;
     const fieldConfig = sanitizeFields('alert', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -57,6 +57,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
       filter,
       size,
       offset,
+      autoPaginate,
       sort,
       needMessage,
       customColumns
@@ -73,7 +74,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
         sort,
         needMessage,
         customColumns,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw

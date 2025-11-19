@@ -49,7 +49,7 @@ export class DashboardHandler extends ResourceHandler<LMDashboard> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMDashboard>> {
     const validated = validateListDashboards(args);
-    const { fields, filter, size, offset } = validated;
+    const { fields, filter, size, offset, autoPaginate } = validated;
     const fieldConfig = sanitizeFields('dashboard', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -63,7 +63,8 @@ export class DashboardHandler extends ResourceHandler<LMDashboard> {
       fields: fieldConfig.fieldsParam,
       filter,
       size,
-      offset
+      offset,
+      autoPaginate
     });
 
     const result: OperationResult<LMDashboard> = {
@@ -74,7 +75,7 @@ export class DashboardHandler extends ResourceHandler<LMDashboard> {
         filter,
         size,
         offset,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw
@@ -113,7 +114,7 @@ export class DashboardHandler extends ResourceHandler<LMDashboard> {
       data: apiResult.data,
       request: {
         dashboardId,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw

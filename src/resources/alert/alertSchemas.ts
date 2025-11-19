@@ -12,6 +12,7 @@ export function validateListAlerts(args: unknown) {
     fields: Joi.string().optional(),
     size: Joi.number().min(1).max(1000).optional(),
     offset: Joi.number().min(0).optional(),
+    autoPaginate: Joi.boolean().optional(),
     sort: Joi.string().optional(),
     needMessage: Joi.boolean().optional(),
     customColumns: Joi.string().optional()

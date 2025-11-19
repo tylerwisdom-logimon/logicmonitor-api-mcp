@@ -230,7 +230,8 @@ export class LogicMonitorClient {
   private async paginateAll<T>(
     endpoint: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    params?: Record<string, any>
+    params?: Record<string, any>,
+    autoPaginate: boolean = true
   ): Promise<ApiListResult<T>> {
     const requestedSize = params?.size ?? 1000;
     const baseOffset = params?.offset ?? 0;
@@ -252,6 +253,7 @@ export class LogicMonitorClient {
     this.logger.debug(`Starting pagination for ${endpoint}`, {
       initialSize: requestedSize,
       initialOffset: offset,
+      autoPaginate,
       params
     });
 
@@ -296,10 +298,14 @@ export class LogicMonitorClient {
           requestedSize,
           returnedSize: items.length,
           totalSoFar: allItems.length,
-          total: totalCount
+          total: totalCount,
+          autoPaginate
         });
 
-        if (items.length === 0 || allItems.length >= totalCount) {
+        // If autoPaginate is false, stop after first page
+        if (!autoPaginate) {
+          hasMore = false;
+        } else if (items.length === 0 || allItems.length >= totalCount) {
           hasMore = false;
         } else {
           offset += items.length;
@@ -367,11 +373,13 @@ export class LogicMonitorClient {
     end?: number;
     netflowFilter?: string;
     includeDeletedResources?: boolean;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMDevice>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const formattedParams: Record<string, unknown> = {
-      ...params,
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      ...restParams,
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: DEVICE_FILTER_FIELDS,
             resourceName: 'device'
           })
@@ -383,12 +391,13 @@ export class LogicMonitorClient {
     );
     
     this.logger.debug('Device list request', {
-      originalFilter: params?.filter,
+      originalFilter: restParams?.filter,
       formattedFilter: sanitizedParams.filter,
-      params: sanitizedParams
+      params: sanitizedParams,
+      autoPaginate
     });
     
-    return this.paginateAll<LMDevice>('/device/devices', sanitizedParams);
+    return this.paginateAll<LMDevice>('/device/devices', sanitizedParams, autoPaginate);
   }
 
   async getDevice(deviceId: number, params?: {
@@ -570,14 +579,18 @@ export class LogicMonitorClient {
       payload.hostGroupIds = updates.hostGroupIds.join(',');
     }
 
+    // Add opType=replace to preserve existing properties when updating customProperties
+    const queryParams = updates.customProperties ? { opType: 'replace' } : {};
+
     const requestContext: LogicMonitorRequestContext = {
       endpoint: `/device/devices/${deviceId}`,
       method: 'patch',
-      payload
+      payload,
+      params: queryParams
     };
 
     const startedAt = performance.now();
-    const response = await this.axiosInstance.patch(`/device/devices/${deviceId}`, payload);
+    const response = await this.axiosInstance.patch(`/device/devices/${deviceId}`, payload, { params: queryParams });
     const duration = performance.now() - startedAt;
 
     const raw = response.data;
@@ -618,11 +631,13 @@ export class LogicMonitorClient {
     offset?: number;
     fields?: string;
     parentId?: number;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMDeviceGroup>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const formattedParams: Record<string, unknown> = {
-      ...params,
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      ...restParams,
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: DEVICE_GROUP_FILTER_FIELDS,
             resourceName: 'device group'
           })
@@ -634,12 +649,13 @@ export class LogicMonitorClient {
     );
     
     this.logger.debug('Device groups list request', { 
-      originalFilter: params?.filter,
+      originalFilter: restParams?.filter,
       formattedFilter: sanitizedParams.filter,
-      params: sanitizedParams 
+      params: sanitizedParams,
+      autoPaginate
     });
     
-    return this.paginateAll<LMDeviceGroup>('/device/groups', sanitizedParams);
+    return this.paginateAll<LMDeviceGroup>('/device/groups', sanitizedParams, autoPaginate);
   }
 
   async getDeviceGroup(groupId: number, params?: { fields?: string }): Promise<ApiResult<LMDeviceGroup>> {
@@ -722,14 +738,18 @@ export class LogicMonitorClient {
     appliesTo: string;
     customProperties: Array<{ name: string; value: string }>;
   }>): Promise<ApiResult<LMDeviceGroup>> {
+    // Add opType=replace to preserve existing properties when updating customProperties
+    const queryParams = updates.customProperties ? { opType: 'replace' } : {};
+
     const requestContext: LogicMonitorRequestContext = {
       endpoint: `/device/groups/${groupId}`,
       method: 'patch',
-      payload: updates
+      payload: updates,
+      params: queryParams
     };
 
     const startedAt = performance.now();
-    const response = await this.axiosInstance.patch(`/device/groups/${groupId}`, updates);
+    const response = await this.axiosInstance.patch(`/device/groups/${groupId}`, updates, { params: queryParams });
     const duration = performance.now() - startedAt;
 
     const raw = response.data;
@@ -777,11 +797,13 @@ export class LogicMonitorClient {
     offset?: number;
     fields?: string;
     collectorIds?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMWebsite>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const formattedParams: Record<string, unknown> = {
-      ...params,
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      ...restParams,
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: WEBSITE_FILTER_FIELDS,
             resourceName: 'website'
           })
@@ -792,7 +814,7 @@ export class LogicMonitorClient {
       Object.entries(formattedParams).filter(([, value]) => value !== undefined && value !== null)
     );
     
-    return this.paginateAll<LMWebsite>('/website/websites', sanitizedParams);
+    return this.paginateAll<LMWebsite>('/website/websites', sanitizedParams, autoPaginate);
   }
 
   async getWebsite(websiteId: number, params?: { fields?: string }): Promise<ApiResult<LMWebsite>> {
@@ -884,14 +906,18 @@ export class LogicMonitorClient {
     pollingInterval?: number;
     properties?: Array<{ name: string; value: string }>;
   }): Promise<ApiResult<LMWebsite>> {
+    // Add opType=replace to preserve existing properties when updating properties
+    const queryParams = updates.properties ? { opType: 'replace' } : {};
+
     const requestContext: LogicMonitorRequestContext = {
       endpoint: `/website/websites/${websiteId}`,
       method: 'patch',
-      payload: updates
+      payload: updates,
+      params: queryParams
     };
 
     const startedAt = performance.now();
-    const response = await this.axiosInstance.patch(`/website/websites/${websiteId}`, updates);
+    const response = await this.axiosInstance.patch(`/website/websites/${websiteId}`, updates, { params: queryParams });
     const duration = performance.now() - startedAt;
 
     const raw = response.data;
@@ -931,11 +957,13 @@ export class LogicMonitorClient {
     size?: number;
     offset?: number;
     fields?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMWebsiteGroup>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const formattedParams: Record<string, unknown> = {
-      ...params,
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      ...restParams,
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: WEBSITE_GROUP_FILTER_FIELDS,
             resourceName: 'website group'
           })
@@ -946,7 +974,7 @@ export class LogicMonitorClient {
       Object.entries(formattedParams).filter(([, value]) => value !== undefined && value !== null)
     );
     
-    return this.paginateAll<LMWebsiteGroup>('/website/groups', sanitizedParams);
+    return this.paginateAll<LMWebsiteGroup>('/website/groups', sanitizedParams, autoPaginate);
   }
 
   async getWebsiteGroup(groupId: number, params?: { fields?: string }): Promise<ApiResult<LMWebsiteGroup>> {
@@ -1024,14 +1052,18 @@ export class LogicMonitorClient {
     stopMonitoring?: boolean;
     properties?: Array<{ name: string; value: string }>;
   }): Promise<ApiResult<LMWebsiteGroup>> {
+    // Add opType=replace to preserve existing properties when updating properties
+    const queryParams = updates.properties ? { opType: 'replace' } : {};
+
     const requestContext: LogicMonitorRequestContext = {
       endpoint: `/website/groups/${groupId}`,
       method: 'patch',
-      payload: updates
+      payload: updates,
+      params: queryParams
     };
 
     const startedAt = performance.now();
-    const response = await this.axiosInstance.patch(`/website/groups/${groupId}`, updates);
+    const response = await this.axiosInstance.patch(`/website/groups/${groupId}`, updates, { params: queryParams });
     const duration = performance.now() - startedAt;
 
     const raw = response.data;
@@ -1051,9 +1083,11 @@ export class LogicMonitorClient {
   async deleteWebsiteGroup(groupId: number, params?: {
     deleteChildren?: boolean;
   }): Promise<ApiResult<{ groupId: number; deleteChildren: boolean }>> {
-    const queryParams = Object.fromEntries(
-      Object.entries(params ?? {}).filter(([, value]) => value !== undefined && value !== null)
-    );
+    // Convert boolean to integer for API (0 or 1)
+    const queryParams: Record<string, number> = {};
+    if (params?.deleteChildren !== undefined) {
+      queryParams.deleteChildren = params.deleteChildren ? 1 : 0;
+    }
 
     const requestContext: LogicMonitorRequestContext = {
       endpoint: `/website/groups/${groupId}`,
@@ -1078,11 +1112,13 @@ export class LogicMonitorClient {
     size?: number;
     offset?: number;
     fields?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMCollector>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const formattedParams: Record<string, unknown> = {
-      ...params,
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      ...restParams,
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: COLLECTOR_FILTER_FIELDS,
             resourceName: 'collector'
           })
@@ -1094,12 +1130,13 @@ export class LogicMonitorClient {
     );
     
     this.logger.debug('Collectors list request', { 
-      originalFilter: params?.filter,
+      originalFilter: restParams?.filter,
       formattedFilter: sanitizedParams.filter,
-      params: sanitizedParams 
+      params: sanitizedParams,
+      autoPaginate
     });
     
-    return this.paginateAll<LMCollector>('/setting/collector/collectors', sanitizedParams);
+    return this.paginateAll<LMCollector>('/setting/collector/collectors', sanitizedParams, autoPaginate);
   }
 
   // Alert methods
@@ -1111,11 +1148,13 @@ export class LogicMonitorClient {
     sort?: string;
     needMessage?: boolean;
     customColumns?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMAlert>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const formattedParams: Record<string, unknown> = {
-      ...params,
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      ...restParams,
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: ALERT_FILTER_FIELDS,
             resourceName: 'alert'
           })
@@ -1178,10 +1217,14 @@ export class LogicMonitorClient {
       this.logger.debug('Fetched alert page', {
         offset: currentOffset,
         returned: items.length,
-        reportedTotal
+        reportedTotal,
+        autoPaginate
       });
 
-      if (items.length < pageSize) {
+      // If autoPaginate is false, stop after first page
+      if (!autoPaginate) {
+        fetchMore = false;
+      } else if (items.length < pageSize) {
         fetchMore = false;
       } else if (typeof reportedTotal === 'number') {
         if (reportedTotal >= 0 && allItems.length >= reportedTotal) {
@@ -1325,20 +1368,22 @@ export class LogicMonitorClient {
     size?: number;
     offset?: number;
     fields?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMUser>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const sanitizedParams: Record<string, unknown> = {
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: new Set(['username', 'email', 'firstName', 'lastName', 'status', 'roles']),
             resourceName: 'user'
           })
         : undefined,
-      size: params?.size ?? 50,
-      offset: params?.offset ?? 0,
-      fields: params?.fields
+      size: restParams?.size ?? 50,
+      offset: restParams?.offset ?? 0,
+      fields: restParams?.fields
     };
     
-    return this.paginateAll<LMUser>('/setting/admins', sanitizedParams);
+    return this.paginateAll<LMUser>('/setting/admins', sanitizedParams, autoPaginate);
   }
 
   async getUser(userId: number, params?: { fields?: string }): Promise<ApiResult<LMUser>> {
@@ -1522,20 +1567,22 @@ export class LogicMonitorClient {
     size?: number;
     offset?: number;
     fields?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMDashboard>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const sanitizedParams: Record<string, unknown> = {
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: new Set(['name', 'description', 'groupId', 'owner', 'template']),
             resourceName: 'dashboard'
           })
         : undefined,
-      size: params?.size ?? 50,
-      offset: params?.offset ?? 0,
-      fields: params?.fields
+      size: restParams?.size ?? 50,
+      offset: restParams?.offset ?? 0,
+      fields: restParams?.fields
     };
     
-    return this.paginateAll<LMDashboard>('/dashboard/dashboards', sanitizedParams);
+    return this.paginateAll<LMDashboard>('/dashboard/dashboards', sanitizedParams, autoPaginate);
   }
 
   async getDashboard(dashboardId: number, params?: { fields?: string }): Promise<ApiResult<LMDashboard>> {
@@ -1651,20 +1698,22 @@ export class LogicMonitorClient {
     size?: number;
     offset?: number;
     fields?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMCollectorGroup>> {
+    const { autoPaginate = true, ...restParams } = params || {};
     const sanitizedParams: Record<string, unknown> = {
-      filter: params?.filter
-        ? formatLogicMonitorFilter(params.filter, {
+      filter: restParams?.filter
+        ? formatLogicMonitorFilter(restParams.filter, {
             allowedFields: new Set(['name', 'description', 'numOfCollectors', 'autoBalance']),
             resourceName: 'collectorGroup'
           })
         : undefined,
-      size: params?.size ?? 50,
-      offset: params?.offset ?? 0,
-      fields: params?.fields
+      size: restParams?.size ?? 50,
+      offset: restParams?.offset ?? 0,
+      fields: restParams?.fields
     };
     
-    return this.paginateAll<LMCollectorGroup>('/setting/collector/groups', sanitizedParams);
+    return this.paginateAll<LMCollectorGroup>('/setting/collector/groups', sanitizedParams, autoPaginate);
   }
 
   async getCollectorGroup(groupId: number, params?: { fields?: string }): Promise<ApiResult<LMCollectorGroup>> {
@@ -1732,14 +1781,18 @@ export class LogicMonitorClient {
   }
 
   async updateCollectorGroup(groupId: number, updates: Record<string, unknown>): Promise<ApiResult<LMCollectorGroup>> {
+    // Add opType=replace to preserve existing properties when updating customProperties
+    const queryParams = updates.customProperties ? { opType: 'replace' } : {};
+
     const requestContext: LogicMonitorRequestContext = {
       endpoint: `/setting/collector/groups/${groupId}`,
       method: 'patch',
-      payload: updates
+      payload: updates,
+      params: queryParams
     };
 
     const startedAt = performance.now();
-    const response = await this.axiosInstance.patch(`/setting/collector/groups/${groupId}`, updates);
+    const response = await this.axiosInstance.patch(`/setting/collector/groups/${groupId}`, updates, { params: queryParams });
     const duration = performance.now() - startedAt;
     
     const group = response.data;
@@ -1780,13 +1833,15 @@ export class LogicMonitorClient {
     size?: number;
     offset?: number;
     fields?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMDeviceDatasource>> {
-    const sanitizedParams = params ? {
-      ...params,
-      fields: params.fields && params.fields !== '*' ? params.fields : undefined
+    const { autoPaginate = true, ...restParams } = params || {};
+    const sanitizedParams = restParams ? {
+      ...restParams,
+      fields: restParams.fields && restParams.fields !== '*' ? restParams.fields : undefined
     } : {};
 
-    return this.paginateAll<LMDeviceDatasource>(`/device/devices/${deviceId}/devicedatasources`, sanitizedParams);
+    return this.paginateAll<LMDeviceDatasource>(`/device/devices/${deviceId}/devicedatasources`, sanitizedParams, autoPaginate);
   }
 
   /**
@@ -1836,15 +1891,18 @@ export class LogicMonitorClient {
     size?: number;
     offset?: number;
     fields?: string;
+    autoPaginate?: boolean;
   }): Promise<ApiListResult<LMDeviceDatasourceInstance>> {
-    const sanitizedParams = params ? {
-      ...params,
-      fields: params.fields && params.fields !== '*' ? params.fields : undefined
+    const { autoPaginate = true, ...restParams } = params || {};
+    const sanitizedParams = restParams ? {
+      ...restParams,
+      fields: restParams.fields && restParams.fields !== '*' ? restParams.fields : undefined
     } : {};
 
     return this.paginateAll<LMDeviceDatasourceInstance>(
       `/device/devices/${deviceId}/devicedatasources/${datasourceId}/instances`,
-      sanitizedParams
+      sanitizedParams,
+      autoPaginate
     );
   }
 

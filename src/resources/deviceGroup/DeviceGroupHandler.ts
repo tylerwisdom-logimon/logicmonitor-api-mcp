@@ -47,7 +47,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMDeviceGroup>> {
     const validated = validateListDeviceGroups(args);
-    const { fields, filter, size, offset } = validated;
+    const { fields, filter, size, offset, autoPaginate } = validated;
     const fieldConfig = sanitizeFields('deviceGroup', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -61,7 +61,8 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       fields: fieldConfig.fieldsParam,
       filter,
       size,
-      offset
+      offset,
+      autoPaginate
     });
 
     const result: OperationResult<LMDeviceGroup> = {
@@ -72,7 +73,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
         filter,
         size,
         offset,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw
@@ -111,7 +112,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       data: apiResult.data,
       request: {
         groupId,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw

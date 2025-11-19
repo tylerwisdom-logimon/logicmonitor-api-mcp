@@ -46,7 +46,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields. See resource health://logicmonitor/fields/device for available fields.'
+          description: 'Comma-separated list of specific fields to return (e.g., "id,displayName,hostStatus"). Omit this property entirely to return all fields. See resource health://logicmonitor/fields/device for available fields.'
         },
         // List operation
         filter: {
@@ -63,6 +63,10 @@ export const resourceTools: Tool[] = [
           type: 'number',
           minimum: 0,
           description: 'Pagination offset for list operation'
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Create operation
         displayName: {
@@ -130,7 +134,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. See resource health://logicmonitor/fields/device_group'
+          description: 'Comma-separated list of specific fields to return (e.g., "id,name,parentId"). Omit this property entirely to return all fields. See resource health://logicmonitor/fields/device_group'
         },
         filter: {
           type: 'string',
@@ -144,6 +148,10 @@ export const resourceTools: Tool[] = [
         offset: {
           type: 'number',
           minimum: 0
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Create/Update
         name: {
@@ -210,7 +218,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. See resource health://logicmonitor/fields/website'
+          description: 'Comma-separated list of specific fields to return (e.g., "id,name,domain"). Omit this property entirely to return all fields. See resource health://logicmonitor/fields/website'
         },
         filter: {
           type: 'string',
@@ -224,6 +232,10 @@ export const resourceTools: Tool[] = [
         offset: {
           type: 'number',
           minimum: 0
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Create/Update
         name: {
@@ -297,7 +309,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. See resource health://logicmonitor/fields/website_group'
+          description: 'Comma-separated list of specific fields to return (e.g., "id,name,description"). Omit this property entirely to return all fields. See resource health://logicmonitor/fields/website_group'
         },
         filter: {
           type: 'string',
@@ -311,6 +323,10 @@ export const resourceTools: Tool[] = [
         offset: {
           type: 'number',
           minimum: 0
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Create/Update
         name: {
@@ -374,7 +390,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. See resource health://logicmonitor/fields/collector'
+          description: 'Comma-separated list of specific fields to return (e.g., "id,description,hostname"). Omit this property entirely to return all fields. See resource health://logicmonitor/fields/collector'
         },
         filter: {
           type: 'string',
@@ -388,6 +404,10 @@ export const resourceTools: Tool[] = [
         offset: {
           type: 'number',
           minimum: 0
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         }
       },
       required: ['operation']
@@ -410,7 +430,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. See resource health://logicmonitor/fields/alert'
+          description: 'Comma-separated list of specific fields to return (e.g., "id,severity,resourceTemplateName"). Omit this property entirely to return all fields. See resource health://logicmonitor/fields/alert'
         },
         filter: {
           type: 'string',
@@ -436,6 +456,10 @@ export const resourceTools: Tool[] = [
         customColumns: {
           type: 'string',
           description: 'Property or token values to include'
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Update operations
         action: {
@@ -469,7 +493,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields.'
+          description: 'Comma-separated list of specific fields to return. Omit this property entirely to return all fields. See resource health://logicmonitor/fields/user for available fields.'
         },
         // List operation
         filter: {
@@ -486,6 +510,10 @@ export const resourceTools: Tool[] = [
           type: 'number',
           minimum: 0,
           description: 'Pagination offset for list operation'
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Create operation
         username: {
@@ -577,7 +605,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields.'
+          description: 'Comma-separated list of specific fields to return. Omit this property entirely to return all fields. See resource health://logicmonitor/fields/dashboard for available fields.'
         },
         // List operation
         filter: {
@@ -594,6 +622,10 @@ export const resourceTools: Tool[] = [
           type: 'number',
           minimum: 0,
           description: 'Pagination offset for list operation'
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Create operation
         name: {
@@ -670,7 +702,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return. Use "*" for all fields.'
+          description: 'Comma-separated list of specific fields to return. Omit this property entirely to return all fields. See resource health://logicmonitor/fields/collector_group for available fields.'
         },
         // List operation
         filter: {
@@ -687,6 +719,10 @@ export const resourceTools: Tool[] = [
           type: 'number',
           minimum: 0,
           description: 'Pagination offset for list operation'
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Create operation
         name: {
@@ -833,7 +869,7 @@ export const resourceTools: Tool[] = [
         },
         fields: {
           type: 'string',
-          description: 'Comma-separated list of fields to return'
+          description: 'Comma-separated list of specific fields to return. Omit this property entirely to return all fields. See resources health://logicmonitor/fields/device_datasource (for list_datasources) and health://logicmonitor/fields/device_datasource_instance (for list_instances) for available fields.'
         },
         size: {
           type: 'number',
@@ -845,6 +881,10 @@ export const resourceTools: Tool[] = [
           type: 'number',
           minimum: 0,
           description: 'Pagination offset for list operations'
+        },
+        autoPaginate: {
+          type: 'boolean',
+          description: 'Whether to automatically fetch all pages (default: true). Set to false to limit results to the specified size.'
         },
         // Batch operation parameters
         applyToPrevious: {

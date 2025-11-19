@@ -17,7 +17,8 @@ export function validateListWebsiteGroups(args: unknown) {
     filter: Joi.string().optional(),
     size: Joi.number().min(1).max(1000).optional(),
     offset: Joi.number().min(0).optional(),
-    fields: Joi.string().optional()
+    fields: Joi.string().optional(),
+    autoPaginate: Joi.boolean().optional()
   }).unknown(false);
 
   const { error, value } = schema.validate(args);

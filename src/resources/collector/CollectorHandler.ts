@@ -30,7 +30,7 @@ export class CollectorHandler extends ResourceHandler<LMCollector> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMCollector>> {
     const validated = validateListCollectors(args);
-    const { fields, filter, size, offset } = validated;
+    const { fields, filter, size, offset, autoPaginate } = validated;
     const fieldConfig = sanitizeFields('collector', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -41,7 +41,8 @@ export class CollectorHandler extends ResourceHandler<LMCollector> {
       fields: fieldConfig.fieldsParam,
       filter,
       size,
-      offset
+      offset,
+      autoPaginate
     });
 
     const result: OperationResult<LMCollector> = {

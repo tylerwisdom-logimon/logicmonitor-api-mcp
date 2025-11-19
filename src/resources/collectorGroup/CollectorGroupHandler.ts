@@ -49,7 +49,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMCollectorGroup>> {
     const validated = validateListCollectorGroups(args);
-    const { fields, filter, size, offset } = validated;
+    const { fields, filter, size, offset, autoPaginate } = validated;
     const fieldConfig = sanitizeFields('collectorGroup', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -63,7 +63,8 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       fields: fieldConfig.fieldsParam,
       filter,
       size,
-      offset
+      offset,
+      autoPaginate
     });
 
     const result: OperationResult<LMCollectorGroup> = {
@@ -74,7 +75,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
         filter,
         size,
         offset,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw
@@ -113,7 +114,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       data: apiResult.data,
       request: {
         groupId,
-        fields: fieldConfig.includeAll ? '*' : fieldConfig.applied.join(',')
+        fields: fieldConfig.includeAll ? undefined : fieldConfig.applied.join(',')
       },
       meta: apiResult.meta,
       raw: apiResult.raw

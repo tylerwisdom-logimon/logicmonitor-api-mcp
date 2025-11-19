@@ -17,6 +17,7 @@ export interface ListOperationArgs extends BaseOperationArgs {
   size?: number;
   offset?: number;
   fields?: string;
+  autoPaginate?: boolean;
 }
 
 export interface GetOperationArgs extends BaseOperationArgs {

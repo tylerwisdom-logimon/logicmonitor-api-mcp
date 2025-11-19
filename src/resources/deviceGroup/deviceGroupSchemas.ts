@@ -18,6 +18,7 @@ export function validateListDeviceGroups(args: unknown) {
     size: Joi.number().min(1).max(1000).optional(),
     offset: Joi.number().min(0).optional(),
     fields: Joi.string().optional(),
+    autoPaginate: Joi.boolean().optional(),
     parentId: Joi.number().optional()
   }).unknown(false);
 

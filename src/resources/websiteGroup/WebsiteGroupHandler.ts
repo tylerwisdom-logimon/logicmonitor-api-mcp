@@ -39,7 +39,7 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const validated = validateListWebsiteGroups(args);
-    const { fields, filter, size, offset } = validated;
+    const { fields, filter, size, offset, autoPaginate } = validated;
     const fieldConfig = sanitizeFields('websiteGroup', fields);
 
     if (fieldConfig.invalid.length > 0) {
@@ -50,7 +50,8 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       fields: fieldConfig.fieldsParam,
       filter,
       size,
-      offset
+      offset,
+      autoPaginate
     });
 
     const result: OperationResult<LMWebsiteGroup> = {
@@ -191,10 +192,14 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       throw new McpError(ErrorCode.InvalidParams, 'Website group ID must be a number');
     }
 
-    const apiResult = await this.client.deleteWebsiteGroup(groupId, {
+    const deleteParams: { deleteChildren?: boolean } = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((validated as any).deleteChildren !== undefined) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      deleteChildren: (validated as any).deleteChildren ?? false
-    });
+      deleteParams.deleteChildren = (validated as any).deleteChildren;
+    }
+    
+    const apiResult = await this.client.deleteWebsiteGroup(groupId, deleteParams);
 
     const result: OperationResult<LMWebsiteGroup> = {
       success: true,

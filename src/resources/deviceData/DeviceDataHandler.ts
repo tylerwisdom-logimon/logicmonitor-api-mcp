@@ -70,12 +70,13 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
    */
   private async handleListDatasources(args: unknown): Promise<OperationResult<LMDeviceDatasource>> {
     const validated = validateListDatasources(args);
-    const { deviceId, filter, size, offset, fields, datasourceIncludeFilter, datasourceExcludeFilter } = validated;
+    const { deviceId, filter, size, offset, autoPaginate, fields, datasourceIncludeFilter, datasourceExcludeFilter } = validated;
 
     const apiResult = await this.client.listDeviceDatasources(deviceId, {
       filter,
       size,
       offset,
+      autoPaginate,
       fields
     });
 
@@ -126,12 +127,13 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
    */
   private async handleListInstances(args: unknown): Promise<OperationResult<LMDeviceDatasourceInstance>> {
     const validated = validateListInstances(args);
-    const { deviceId, datasourceId, filter, size, offset, fields } = validated;
+    const { deviceId, datasourceId, filter, size, offset, autoPaginate, fields } = validated;
 
     const apiResult = await this.client.listDeviceDatasourceInstances(deviceId, datasourceId, {
       filter,
       size,
       offset,
+      autoPaginate,
       fields
     });
 

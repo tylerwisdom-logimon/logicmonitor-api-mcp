@@ -18,6 +18,7 @@ const singleUserSchema = Joi.object({
   password: Joi.string().optional(),
   phone: Joi.string().optional(),
   smsEmail: Joi.string().optional(),
+  status: Joi.string().optional(),
   timezone: Joi.string().optional(),
   note: Joi.string().optional(),
   apionly: Joi.boolean().optional(),
@@ -54,7 +55,8 @@ export function validateListUsers(args: unknown) {
     filter: Joi.string().optional(),
     size: Joi.number().min(1).max(1000).optional(),
     offset: Joi.number().min(0).optional(),
-    fields: Joi.string().optional()
+    fields: Joi.string().optional(),
+    autoPaginate: Joi.boolean().optional()
   }).unknown(false);
 
   const { error, value } = schema.validate(args);
@@ -111,6 +113,7 @@ export function validateCreateUser(args: unknown) {
     password: Joi.string().optional(),
     phone: Joi.string().optional(),
     smsEmail: Joi.string().optional(),
+    status: Joi.string().optional(),
     timezone: Joi.string().optional(),
     note: Joi.string().optional(),
     apionly: Joi.boolean().optional(),
