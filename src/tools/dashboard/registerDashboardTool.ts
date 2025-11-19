@@ -5,7 +5,6 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { DashboardOperationArgsSchema } from '../../resources/dashboard/dashboardZodSchemas.js';
 import { DashboardHandler } from '../../resources/dashboard/dashboardHandler.js';
-import { zodToJsonSchema } from '../../schemas/zodToJsonSchema.js';
 
 /**
  * Registers the lm_dashboard tool with the MCP server
@@ -33,8 +32,7 @@ Batch operations support:
 - Explicit arrays via 'dashboards' parameter
 - applyToPrevious: Reference session variables for batch operations
 - filter: Apply operations to all dashboards matching a filter`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: zodToJsonSchema(DashboardOperationArgsSchema) as any
+      inputSchema: DashboardOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {

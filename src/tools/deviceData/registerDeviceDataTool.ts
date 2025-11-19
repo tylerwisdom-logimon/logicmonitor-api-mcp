@@ -5,7 +5,6 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { DeviceDataOperationArgsSchema } from '../../resources/deviceData/deviceDataZodSchemas.js';
 import { DeviceDataHandler } from '../../resources/deviceData/deviceDataHandler.js';
-import { zodToJsonSchema } from '../../schemas/zodToJsonSchema.js';
 
 /**
  * Registers the lm_device_data tool with the MCP server
@@ -30,8 +29,7 @@ Available fields:
 - instances: health://logicmonitor/fields/device_datasource_instance
 
 Note: This is a read-only tool for querying monitoring data.`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: zodToJsonSchema(DeviceDataOperationArgsSchema) as any
+      inputSchema: DeviceDataOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {

@@ -5,7 +5,6 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { UserOperationArgsSchema } from '../../resources/user/userZodSchemas.js';
 import { UserHandler } from '../../resources/user/userHandler.js';
-import { zodToJsonSchema } from '../../schemas/zodToJsonSchema.js';
 
 /**
  * Registers the lm_user tool with the MCP server
@@ -33,8 +32,7 @@ Batch operations support:
 - Explicit arrays via 'users' parameter
 - applyToPrevious: Reference session variables for batch operations
 - filter: Apply operations to all users matching a filter`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: zodToJsonSchema(UserOperationArgsSchema) as any
+      inputSchema: UserOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {

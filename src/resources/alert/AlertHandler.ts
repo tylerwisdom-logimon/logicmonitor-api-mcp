@@ -16,7 +16,7 @@ import type {
   DeleteOperationArgs,
   OperationResult
 } from '../../types/operations.js';
-import { validateAlertOperation } from './alertZodSchemas.js';
+import { validateListAlerts, validateGetAlert, validateUpdateAlert } from './alertZodSchemas.js';
 
 export class AlertHandler extends ResourceHandler<LMAlert> {
   constructor(client: LogicMonitorClient, sessionManager: SessionManager, sessionId?: string) {
@@ -29,7 +29,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
   }
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMAlert>> {
-    const validated = validateAlertOperation({ ...args, operation: 'list' as const });
+    const validated = validateListAlerts({ ...args, operation: 'list' as const });
     const { fields, filter, size, offset, autoPaginate, sort, needMessage, customColumns } = validated;
     const fieldConfig = sanitizeFields('alert', fields);
 
@@ -75,7 +75,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
   }
 
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMAlert>> {
-    const validated = validateAlertOperation({ ...args, operation: 'get' as const });
+    const validated = validateGetAlert({ ...args, operation: 'get' as const });
     const alertId = validated.id ?? validated.alertId;
     
     if (!alertId) {
@@ -104,7 +104,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
   }
 
   protected async handleUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMAlert>> {
-    const validated = validateAlertOperation({ ...args, operation: 'update' as const });
+    const validated = validateUpdateAlert({ ...args, operation: 'update' as const });
     const action = validated.action;
     
     if (!action) {

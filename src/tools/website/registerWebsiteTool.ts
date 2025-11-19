@@ -5,7 +5,6 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { WebsiteOperationArgsSchema } from '../../resources/website/websiteZodSchemas.js';
 import { WebsiteHandler } from '../../resources/website/websiteHandler.js';
-import { zodToJsonSchema } from '../../schemas/zodToJsonSchema.js';
 
 /**
  * Registers the lm_website tool with the MCP server
@@ -33,8 +32,7 @@ Batch operations support:
 - Explicit arrays via 'websites' parameter
 - applyToPrevious: Reference session variables for batch operations
 - filter: Apply operations to all websites matching a filter`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: zodToJsonSchema(WebsiteOperationArgsSchema) as any
+      inputSchema: WebsiteOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {

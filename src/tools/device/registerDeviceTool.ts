@@ -5,7 +5,6 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { DeviceOperationArgsSchema } from '../../resources/device/deviceZodSchemas.js';
 import { DeviceHandler } from '../../resources/device/deviceHandler.js';
-import { zodToJsonSchema } from '../../schemas/zodToJsonSchema.js';
 
 /**
  * Registers the lm_device tool with the MCP server
@@ -33,8 +32,7 @@ Batch operations support:
 - Explicit arrays via 'devices' parameter
 - applyToPrevious: Reference session variables for batch operations
 - filter: Apply operations to all devices matching a filter`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: zodToJsonSchema(DeviceOperationArgsSchema) as any
+      inputSchema: DeviceOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {

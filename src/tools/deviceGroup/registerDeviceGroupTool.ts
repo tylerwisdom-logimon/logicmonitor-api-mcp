@@ -5,7 +5,6 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { DeviceGroupOperationArgsSchema } from '../../resources/deviceGroup/deviceGroupZodSchemas.js';
 import { DeviceGroupHandler } from '../../resources/deviceGroup/deviceGroupHandler.js';
-import { zodToJsonSchema } from '../../schemas/zodToJsonSchema.js';
 
 /**
  * Registers the lm_device_group tool with the MCP server
@@ -33,8 +32,7 @@ Batch operations support:
 - Explicit arrays via 'groups' parameter
 - applyToPrevious: Reference session variables for batch operations
 - filter: Apply operations to all groups matching a filter`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: zodToJsonSchema(DeviceGroupOperationArgsSchema) as any
+      inputSchema: DeviceGroupOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {

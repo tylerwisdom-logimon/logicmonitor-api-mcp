@@ -1,35 +1,19 @@
-import { z } from 'zod';
+/**
+ * Flattens a discriminated union JSON Schema for better MCP Inspector display
+ * Converts anyOf structures into flat object schemas with all parameters visible
+ */
 
 /**
- * Converts a Zod schema to JSON Schema format using Zod v4's native support
- * @param schema - The Zod schema to convert
- * @returns JSON Schema representation compatible with MCP SDK
+ * Flattens a JSON Schema that has anyOf at the root (discriminated union)
+ * @param schema - JSON Schema with anyOf at root
+ * @returns Flattened JSON Schema with all properties visible
  */
-export function zodToJsonSchema(schema: z.ZodType): Record<string, unknown> {
-  // Use Zod v4's native JSON Schema conversion
-  const jsonSchema = z.toJSONSchema(schema, { target: "draft-7" });
-  
-  // Check if this is a discriminated union (has anyOf at root)
-  if (jsonSchema.anyOf && Array.isArray(jsonSchema.anyOf)) {
-    return flattenDiscriminatedUnion(jsonSchema);
+export function flattenDiscriminatedUnion(schema: Record<string, unknown>): Record<string, unknown> {
+  // If no anyOf, return as-is
+  if (!schema.anyOf || !Array.isArray(schema.anyOf)) {
+    return schema;
   }
   
-  // Ensure type: "object" is present
-  if (!jsonSchema.type) {
-    return {
-      type: 'object',
-      ...jsonSchema
-    };
-  }
-  
-  return jsonSchema;
-}
-
-/**
- * Flattens a discriminated union JSON Schema into a flat object schema
- * This makes all parameters visible in MCP Inspector regardless of operation
- */
-function flattenDiscriminatedUnion(schema: Record<string, unknown>): Record<string, unknown> {
   const anyOf = schema.anyOf as Array<Record<string, unknown>>;
   
   // Find the discriminator field by looking at the first branch

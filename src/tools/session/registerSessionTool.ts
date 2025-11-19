@@ -5,7 +5,6 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { SessionOperationArgsSchema } from '../../resources/session/sessionZodSchemas.js';
 import { SessionHandler } from '../../resources/session/sessionHandler.js';
-import { zodToJsonSchema } from '../../schemas/zodToJsonSchema.js';
 
 /**
  * Registers the lm_session tool with the MCP server
@@ -35,8 +34,7 @@ Session variables are commonly used with batch operations:
 Example workflow:
 - List devices with filter and store results
 - Update all devices from previous operation using applyToPrevious`,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      inputSchema: zodToJsonSchema(SessionOperationArgsSchema) as any
+      inputSchema: SessionOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {

@@ -386,6 +386,56 @@ export async function createServer(config: ServerConfig = {}) {
     return new SessionHandler(sessionManager);
   });
 
+  // Override the SDK's ListToolsRequestSchema handler to apply schema flattening
+  // This makes discriminated union parameters visible in the MCP Inspector
+  const { flattenDiscriminatedUnion } = await import('./schemas/zodToJsonSchema.js');
+  const { ListToolsRequestSchema } = await import('@socotra/modelcontextprotocol-sdk/types.js');
+  const { toJsonSchemaCompat } = await import('@socotra/modelcontextprotocol-sdk/server/zod-json-schema-compat.js');
+  
+  interface RegisteredTool {
+    enabled: boolean;
+    title?: string;
+    description?: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    annotations?: Record<string, unknown>;
+    _meta?: Record<string, unknown>;
+  }
+
+  mcpServer.server.setRequestHandler(ListToolsRequestSchema, () => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    tools: Object.entries((mcpServer as any)._registeredTools as Record<string, RegisteredTool>)
+      .filter(([, tool]) => tool.enabled)
+      .map(([name, tool]) => {
+        let inputSchema: Record<string, unknown> | undefined;
+        
+        if (tool.inputSchema) {
+          // Convert Zod schema to JSON Schema using SDK's converter
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const jsonSchema = toJsonSchemaCompat(tool.inputSchema as any, {
+            strictUnions: true,
+            pipeStrategy: 'input'
+          }) as Record<string, unknown>;
+          
+          // Apply flattening if it's a discriminated union
+          if (jsonSchema.anyOf && Array.isArray(jsonSchema.anyOf)) {
+            inputSchema = flattenDiscriminatedUnion(jsonSchema);
+          } else {
+            inputSchema = jsonSchema;
+          }
+        }
+        
+        return {
+          name,
+          title: tool.title,
+          description: tool.description,
+          inputSchema,
+          annotations: tool.annotations,
+          _meta: tool._meta
+        };
+      })
+  }));
+
   mcpServer.server.oninitialized = () => {
     logger.info('MCP session initialized');
   };

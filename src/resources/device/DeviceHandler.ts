@@ -48,7 +48,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
   }
 
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMDevice>> {
-    const validated = validateListDevices(args);
+    const validated = validateListDevices({ ...args, operation: 'list' as const });
     const { fields, filter, size, offset, autoPaginate, start, end, netflowFilter, includeDeletedResources } = validated;
     const fieldConfig = sanitizeFields('device', fields);
 
