@@ -74,17 +74,22 @@ export async function createServer(config: ServerConfig = {}) {
   const mcpServer = new McpServer(
     {
       name: config.name || APP_NAME,
-      version: config.version || APP_VERSION,
-      capabilities: { resources: {}, tools: {} }
+      version: config.version || APP_VERSION
     },
     {
-      instructions
+      instructions,
+      capabilities: { resources: {}, tools: {} }
     }
   );
 
-  mcpServer.resource(
+  mcpServer.registerResource(
     'logicmonitor-health-status',
     'health://logicmonitor/status',
+    {
+      title: 'LogicMonitor API Health Status',
+      description: 'Real-time metrics and health status of the LogicMonitor API client',
+      mimeType: 'application/json'
+    },
     async () => {
       const snapshot = metricsManager.getSnapshot();
       return {
@@ -180,9 +185,14 @@ export async function createServer(config: ServerConfig = {}) {
   ];
 
   for (const mapping of fieldResourceMap) {
-    mcpServer.resource(
+    mcpServer.registerResource(
       `logicmonitor-${mapping.resource}-fields`,
       mapping.uri,
+      {
+        title: `LogicMonitor ${mapping.resource} Fields`,
+        description: `Available field names for ${mapping.resource} resources and filter expressions`,
+        mimeType: 'application/json'
+      },
       async () => {
         const fields = Array.from(getKnownFields(mapping.key)).sort();
         return {
