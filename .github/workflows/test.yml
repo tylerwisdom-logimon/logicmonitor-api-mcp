@@ -3,8 +3,20 @@ name: Test Suite
 on:
   push:
     branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - '**test.yml'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
   pull_request:
     branches: [ main, develop ]
+    paths-ignore:
+      - '**.md'
+      - '**test.yml'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
 
 jobs:
   test:
@@ -37,15 +49,6 @@ jobs:
         LOG_LEVEL: error
         CLEANUP_ON_FAILURE: true
       run: npm test
-    
-    - name: Upload coverage reports
-      if: matrix.node-version == '20.x'
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage/lcov.info
-        flags: unittests
-        name: codecov-umbrella
-      continue-on-error: true
     
     - name: Archive test results
       if: always()

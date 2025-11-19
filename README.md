@@ -1,3 +1,5 @@
+[![Test Suite](https://github.com/logicmonitor/lm-api-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/logicmonitor/lm-api-mcp/actions/workflows/test.yml)
+
 # LogicMonitor MCP Server
 
 A Model Context Protocol (MCP) server that provides secure access to the LogicMonitor API, enabling AI assistants to manage monitoring infrastructure through natural language commands.
