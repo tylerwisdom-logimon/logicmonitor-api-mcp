@@ -17,7 +17,8 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
-  OperationResult
+  OperationResult,
+  OperationType
 } from '../../types/operations.js';
 import {
   validateListWebsites,
@@ -26,6 +27,7 @@ import {
   validateUpdateWebsite,
   validateDeleteWebsite
 } from './websiteZodSchemas.js';
+import { getWebsiteLink } from '../../utils/resourceLinks.js';
 
 export class WebsiteHandler extends ResourceHandler<LMWebsite> {
   constructor(client: LogicMonitorClient, sessionManager: SessionManager, sessionId?: string) {
@@ -285,6 +287,40 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
     this.storeInSession('delete', result);
     this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'delete', result);
     return result;
+  }
+
+  protected override enhanceResult(operation: OperationType, result: OperationResult<LMWebsite>): void {
+    super.enhanceResult(operation, result);
+    this.attachWebsiteLinks(result);
+  }
+
+  private attachWebsiteLinks(result: OperationResult<LMWebsite>): void {
+    if (result.data) {
+      this.addLinkToWebsite(result.data as unknown as Record<string, unknown>);
+    }
+    if (Array.isArray(result.items)) {
+      result.items.forEach(item =>
+        this.addLinkToWebsite(item as unknown as Record<string, unknown>)
+      );
+    }
+  }
+
+  private addLinkToWebsite(website: Record<string, unknown> | undefined): void {
+    if (!website) {
+      return;
+    }
+    try {
+      const websiteId = website.id ?? website.websiteId;
+      if (websiteId === null || typeof websiteId === 'undefined') {
+        return;
+      }
+      website.linkUrl = getWebsiteLink({
+        company: this.client.getAccount(),
+        websiteId: websiteId as number | string
+      });
+    } catch {
+      // Ignore failures so we never block the primary response
+    }
   }
 }
 

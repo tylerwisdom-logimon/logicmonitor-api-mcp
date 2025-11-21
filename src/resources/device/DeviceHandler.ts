@@ -18,7 +18,8 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
-  OperationResult
+  OperationResult,
+  OperationType
 } from '../../types/operations.js';
 import type { BatchResult, BatchItem } from '../../utils/batchProcessor.js';
 import {
@@ -28,6 +29,7 @@ import {
   validateUpdateDevice,
   validateDeleteDevice
 } from './deviceZodSchemas.js';
+import { getDeviceLink } from '../../utils/resourceLinks.js';
 
 export class DeviceHandler extends ResourceHandler<LMDevice> {
   constructor(
@@ -85,6 +87,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       raw: apiResult.raw
     };
 
+    this.attachDeviceLinks(result);
     this.storeInSession('list', result);
     this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'list', result);
 
@@ -137,6 +140,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       raw: apiResult.raw
     };
 
+    this.attachDeviceLinks(result);
     this.storeInSession('get', result);
     this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'device', deviceId, apiResult.data);
@@ -178,6 +182,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
         meta: entry.meta ?? undefined
       };
 
+      this.attachDeviceLinks(result);
       this.storeInSession('create', result);
       this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'create', result);
       this.sessionManager.cacheResource(this.sessionContext.id, 'device', createdDevice.id, createdDevice);
@@ -202,6 +207,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       results: normalized
     };
 
+    this.attachDeviceLinks(result);
     this.storeInSession('create', result);
     this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'create', result);
 
@@ -236,6 +242,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       meta: apiResult.meta
     };
 
+    this.attachDeviceLinks(result);
     this.storeInSession('update', result);
     this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'update', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'device', deviceId, apiResult.data);
@@ -327,6 +334,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       results: normalized
     };
 
+    this.attachDeviceLinks(result);
     this.storeInSession('update', result);
     this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'update', result);
 
@@ -386,9 +394,41 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
     return result;
   }
 
+  protected override enhanceResult(operation: OperationType, result: OperationResult<LMDevice>): void {
+    super.enhanceResult(operation, result);
+    this.attachDeviceLinks(result);
+  }
+
   /**
    * Helper methods
    */
+  private attachDeviceLinks(result: OperationResult<LMDevice>): void {
+    if (result.data) {
+      this.addLinkToDevice(result.data as unknown as Record<string, unknown>);
+    }
+    if (Array.isArray(result.items)) {
+      result.items.forEach(item =>
+        this.addLinkToDevice(item as unknown as Record<string, unknown>)
+      );
+    }
+  }
+
+  private addLinkToDevice(device: Record<string, unknown> | undefined): void {
+    if (!device) return;
+    const deviceId = device.id ?? device.deviceId;
+    if (deviceId === null || typeof deviceId === 'undefined') {
+      return;
+    }
+    try {
+      device.linkUrl = getDeviceLink({
+        company: this.client.getAccount(),
+        deviceId: deviceId as number | string
+      });
+    } catch {
+      // Ignore link generation errors
+    }
+  }
+
   private isBatchCreate(args: Record<string, unknown>): boolean {
     return !!(args.devices && Array.isArray(args.devices) && args.devices.length > 1);
   }

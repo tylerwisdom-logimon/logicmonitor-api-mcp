@@ -88,6 +88,7 @@ const ALERT_FILTER_FIELDS = getKnownFields('alert');
 export class LogicMonitorClient {
   private axiosInstance: AxiosInstance;
   private logger: winston.Logger;
+  private readonly account: string;
 
   constructor(
     account: string,
@@ -102,9 +103,10 @@ export class LogicMonitorClient {
     });
 
     const timeout = options.timeoutMs ?? 30000;
+    this.account = account.trim().toLowerCase();
 
     this.axiosInstance = axios.create({
-      baseURL: `https://${account}.logicmonitor.com/santaba/rest`,
+      baseURL: `https://${this.account}.logicmonitor.com/santaba/rest`,
       headers: {
         'Authorization': `Bearer ${bearerToken}`,
         'Content-Type': 'application/json',
@@ -2003,5 +2005,9 @@ export class LogicMonitorClient {
       raw: response.data,
       meta: this.createResponseMeta(response, requestContext, duration)
     };
+  }
+
+  getAccount(): string {
+    return this.account;
   }
 }

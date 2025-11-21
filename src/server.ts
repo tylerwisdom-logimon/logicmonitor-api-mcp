@@ -74,11 +74,12 @@ export async function createServer(config: ServerConfig = {}) {
 
   const instructions = config.instructions || [
     APP_DESCRIPTION || 'Use the LogicMonitor tools to manage resources, devices, collectors, alerts, users, dashboards, and more.',
-    'Authenticate with LM_ACCOUNT / LM_BEARER_TOKEN environment variables (stdio) or X-LM-* headers (HTTP).',
-    'Every tool returns the raw LogicMonitor API payload plus request metadata. Use the metadata to chain follow-up actions safely.',
-    'Before setting `fields` or `filter`, call resources/read on health://logicmonitor/fields/<resource> (device, device_group, website, website_group, collector, collector_group, alert, user, dashboard) to confirm supported field names. Unknown fields are rejected.',
-    'Filters must use only those field names. Example filters are included in each field metadata resource.',
-    'Session helpers (lm_*_session_*) let you store variables, review history, and manage context between tool calls.'
+    'Follow this order every time:',
+    '1) Authenticate with LM_ACCOUNT / LM_BEARER_TOKEN environment variables (stdio) or X-LM-* headers (HTTP).',
+    '2) Before calling any lm_* tool, read health://logicmonitor/fields/<resource> to confirm valid field/filter names. Clients must not guess fields; unknown names are rejected.',
+    '3) Before repeating a query or running create/update/delete, read health://logicmonitor/session (or call lm_session get historyLimit=5 includeResults=true) to reuse prior results and applyToPrevious handles instead of relisting.',
+    '4) Tool summaries call out new session keys (for example session.lastDeviceListIds). Reuse those keys via applyToPrevious or lm_session instead of issuing duplicate list calls.',
+    '5) Use lm_session create/update/delete to manage custom batches and clean up temporary context when finished.'
   ].join('\n');
 
   const sessionManager = config.sessionManager ?? new SessionManager();
@@ -109,7 +110,13 @@ export async function createServer(config: ServerConfig = {}) {
           {
             uri: 'health://logicmonitor/status',
             mimeType: 'application/json',
-            text: JSON.stringify({ metrics: snapshot }, null, 2)
+            text: JSON.stringify({ metrics: snapshot }, null, 2),
+            annotations: {
+              audience: ['assistant'],
+              priority: 1,
+              instructions: 'Review when troubleshooting latency or rate limits.',
+              lastModified: new Date().toISOString()
+            }
           }
         ]
       };
@@ -227,8 +234,9 @@ export async function createServer(config: ServerConfig = {}) {
               description: mapping.description,
               name: `logicmonitor-${mapping.resource}-fields`,
               annotations: {
-                audience: ["assistant"],
-                priority: 1,
+                audience: ['assistant'],
+                priority: 2,
+                instructions: `Read before calling lm_${mapping.resource} to validate fields and filters.`,
                 lastModified: new Date().toISOString()
               }
             }
@@ -237,6 +245,75 @@ export async function createServer(config: ServerConfig = {}) {
       }
     );
   }
+
+  mcpServer.registerResource(
+    'logicmonitor-session',
+    'health://logicmonitor/session',
+    {
+      title: 'LogicMonitor Session Snapshot',
+      description: 'Current session variables, history, and applyToPrevious handles for this MCP session',
+      mimeType: 'application/json'
+    },
+    async (uri, extra) => {
+      const searchParams = uri.searchParams;
+      const requestedLimit = Number(searchParams.get('historyLimit'));
+      const historyLimit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.trunc(requestedLimit), 1), 50) : 10;
+      const includeResults = searchParams.get('includeResults') === 'true';
+
+      const snapshot = sessionManager.getSnapshot(extra.sessionId, {
+        historyLimit,
+        includeResults
+      });
+
+      const variableSummaries = Object.entries(snapshot.variables).map(([key, value]) => ({
+        key,
+        summary: Array.isArray(value)
+          ? `array(${value.length})`
+          : value && typeof value === 'object'
+            ? 'object'
+            : typeof value
+      }));
+
+      const applyToPreviousCandidates = variableSummaries
+        .filter(entry => entry.summary.startsWith('array'))
+        .map(entry => {
+          const countMatch = entry.summary.match(/array\((\d+)\)/);
+          return {
+            key: entry.key,
+            length: countMatch ? Number(countMatch[1]) : undefined
+          };
+        });
+
+      return {
+        contents: [
+          {
+            uri: 'health://logicmonitor/session',
+            mimeType: 'application/json',
+            text: JSON.stringify(
+              {
+                historyLimit,
+                includeResults,
+                snapshot,
+                variableSummaries,
+                applyToPreviousCandidates
+              },
+              null,
+              2
+            ),
+            title: 'LogicMonitor session context',
+            description: 'Use before re-running list/update tools to reuse stored IDs',
+            name: 'logicmonitor-session',
+            annotations: {
+              audience: ['assistant'],
+              priority: 2,
+              instructions: 'Read before repeating queries or running create/update/delete to reuse session variables via applyToPrevious.',
+              lastModified: new Date().toISOString()
+            }
+          }
+        ]
+      };
+    }
+  );
 
   mcpServer.server.registerCapabilities({
     resources: {},

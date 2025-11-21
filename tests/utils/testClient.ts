@@ -90,13 +90,27 @@ export class TestMCPClient {
       const content = response.content || [];
       let data: unknown = undefined;
 
-      if (content.length > 0 && content[0].type === 'text') {
-        try {
-          data = JSON.parse(content[0].text);
-        } catch (e) {
-          // If parsing fails, keep as text
-          data = content[0].text;
+      for (const block of content) {
+        if (block.type !== 'text' || typeof block.text !== 'string') {
+          continue;
         }
+
+        if (!block.text.trim()) {
+          continue;
+        }
+
+        try {
+          data = JSON.parse(block.text);
+          break;
+        } catch {
+          if (typeof data === 'undefined') {
+            data = block.text;
+          }
+        }
+      }
+
+      if (typeof data === 'undefined' && content.length > 0 && content[0].type === 'text') {
+        data = content[0].text;
       }
 
       return {

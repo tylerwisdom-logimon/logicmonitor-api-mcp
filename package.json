@@ -15,14 +15,6 @@
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
     "generate:schemas": "orval",
     "test": "NODE_OPTIONS=--experimental-vm-modules jest",
-    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
-    "test:coverage": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
-    "test:integration": "NODE_OPTIONS=--experimental-vm-modules jest --testPathPattern=tests/tools",
-    "test:client": "node tests/test-client.js",
-    "test:headers": "node tests/test-headers.js",
-    "test:session": "node tests/test-session.js",
-    "test:filters": "node tests/test-filters.js",
-    "test:mcp": "node test-mcp-server.js",
     "lint": "eslint src --ext .ts"
   },
   "keywords": [
@@ -62,9 +54,7 @@
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-rate-limit": "^8.2.1",
-    "helmet": "^8.1.0",
     "joi": "^18.0.2",
-    "jose": "^6.1.2",
     "ts-jest": "^29.4.5",
     "typescript-eslint": "^8.47.0",
     "winston": "^3.17.0",
@@ -72,16 +62,12 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.2",
-    "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^24.10.1",
-    "@types/supertest": "^6.0.2",
-    "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^8.32.1",
     "@typescript-eslint/parser": "^8.32.1",
     "eslint": "^9.39.1",
     "jest": "^30.2.0",
     "orval": "^8.0.0-rc.2",
-    "supertest": "^7.0.0",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }

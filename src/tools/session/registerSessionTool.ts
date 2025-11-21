@@ -5,6 +5,7 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { SessionOperationArgsSchema } from '../../resources/session/sessionZodSchemas.js';
 import { SessionHandler } from '../../resources/session/sessionHandler.js';
+import { buildToolResponse } from '../utils/tool-response.js';
 
 /**
  * Registers the lm_session tool with the MCP server
@@ -19,59 +20,46 @@ export function registerSessionTool(
     'lm_session',
     {
       title: 'LogicMonitor Session Management',
-      description: `Manage session state, variables, and operation history.
+      description: `Manage session state, variables, and operation history across tool calls.
 
 OPERATIONS:
 
-1. list - Get session history
-   Parameters: limit (optional, 1-50, default 10)
-   Returns: Recent tool calls and available session data
+1. list - Review the latest tool calls, stored variables, and applyToPrevious candidates (limit defaults to 10).
+2. get - Fetch a full session snapshot or a specific variable (historyLimit 1-50, includeResults for raw payloads).
+3. create - Persist a new variable (e.g., "myProdDevices") for downstream applyToPrevious usage.
+4. update - Overwrite an existing variable while keeping the same key reference.
+5. delete - Clear variables, history, and/or cached results (scope defaults to 'all').
 
-2. get - Get session context or specific variable
-   Parameters: 
-   - key (optional): Variable name to retrieve. If omitted, returns full session context
-   - historyLimit (optional, 1-50): Number of history entries to include
-   - includeResults (optional, boolean): Include full result objects
-   Returns: Variable value or full session context
+QUICK WORKFLOWS:
 
-3. create - Store a new session variable
-   Parameters: key (required), value (required)
-   Returns: Confirmation with list of stored variables
-   Use for: Storing results for batch operations with applyToPrevious
+- Rapid batch edits:
+  1. Call lm_device list ... to populate session.lastDeviceList & session.lastDeviceListIds.
+  2. Read health://logicmonitor/session or lm_session get to confirm the keys.
+  3. Run lm_device update/delete with applyToPrevious: "lastDeviceListIds" (or your custom key).
 
-4. update - Update an existing session variable
-   Parameters: key (required), value (required)
-   Returns: Confirmation with list of stored variables
-
-5. delete - Clear session data
-   Parameters: scope (optional: 'variables' | 'history' | 'results' | 'all', default 'all')
-   Returns: Confirmation with remaining data counts
-
-COMMON WORKFLOWS:
-
-Store results for batch operations:
-- Use operation: "create" with key and value to store data
-- Reference stored data in other tools using applyToPrevious
-
-Example:
-1. lm_device with operation: "list" and filter
-2. lm_session with operation: "create", key: "myDevices", value: <results>
-3. lm_device with operation: "update", applyToPrevious: "myDevices"`,
+- Snapshot validation:
+  - Use resources/read health://logicmonitor/session?historyLimit=5&includeResults=true to see the exact keys and history before repeating queries.
+  - Use lm_session list to surface storedVariables and applyToPreviousCandidates when working entirely via tools.`,
       inputSchema: SessionOperationArgsSchema
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     async (args: any) => {
       const handler = createHandler();
       const result = await handler.handleOperation(args);
-      
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
+
+      const notes: string[] = [];
+      if (Array.isArray(result.data?.storedVariables) && result.data.storedVariables.length > 0) {
+        notes.push(`Stored variables: ${result.data.storedVariables.join(', ')}`);
+      }
+
+      return buildToolResponse(args, result, {
+        resourceName: 'session',
+        resourceTitle: 'LogicMonitor session',
+        sessionKeyOverrides: Array.isArray(result.data?.storedVariables) && result.data.storedVariables.length > 0
+          ? result.data.storedVariables
+          : undefined,
+        notes: notes.length > 0 ? notes : undefined
+      });
     }
   );
 }

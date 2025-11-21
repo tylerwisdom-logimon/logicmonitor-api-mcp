@@ -5,6 +5,7 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { AlertOperationArgsSchema } from '../../resources/alert/alertZodSchemas.js';
 import { AlertHandler } from '../../resources/alert/alertHandler.js';
+import { buildToolResponse } from '../utils/tool-response.js';
 
 /**
  * Registers the lm_alert tool with the MCP server
@@ -33,15 +34,11 @@ Note: Alert creation and deletion are not supported via the API.`,
     async (args: any) => {
       const handler = createHandler();
       const result = await handler.handleOperation(args);
-      
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
+
+      return buildToolResponse(args, result, {
+        resourceName: 'alert',
+        resourceTitle: 'LogicMonitor alert'
+      });
     }
   );
 }

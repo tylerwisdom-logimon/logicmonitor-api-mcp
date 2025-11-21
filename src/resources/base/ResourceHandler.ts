@@ -50,21 +50,29 @@ export abstract class ResourceHandler<T = unknown> {
 
     switch (operation) {
       case 'list':
-        return this.handleList(args as ListOperationArgs);
+        return this.applyEnhancements('list', await this.handleList(args as ListOperationArgs));
       case 'get':
-        return this.handleGet(args as GetOperationArgs);
+        return this.applyEnhancements('get', await this.handleGet(args as GetOperationArgs));
       case 'create':
-        return this.handleCreate(args as CreateOperationArgs);
+        return this.applyEnhancements('create', await this.handleCreate(args as CreateOperationArgs));
       case 'update':
-        return this.handleUpdate(args as UpdateOperationArgs);
+        return this.applyEnhancements('update', await this.handleUpdate(args as UpdateOperationArgs));
       case 'delete':
-        return this.handleDelete(args as DeleteOperationArgs);
+        return this.applyEnhancements('delete', await this.handleDelete(args as DeleteOperationArgs));
       default:
         throw new McpError(
           ErrorCode.InvalidParams,
           `Unknown operation: ${operation}`
         );
     }
+  }
+
+  private applyEnhancements(
+    operation: OperationType,
+    result: OperationResult<T>
+  ): OperationResult<T> {
+    this.enhanceResult(operation, result);
+    return result;
   }
 
   /**
@@ -75,6 +83,11 @@ export abstract class ResourceHandler<T = unknown> {
   protected abstract handleCreate(args: CreateOperationArgs): Promise<OperationResult<T>>;
   protected abstract handleUpdate(args: UpdateOperationArgs): Promise<OperationResult<T>>;
   protected abstract handleDelete(args: DeleteOperationArgs): Promise<OperationResult<T>>;
+
+  protected enhanceResult(operation: OperationType, result: OperationResult<T>): void {
+    void operation;
+    void result;
+  }
 
   /**
    * Resolve resource ID from args or session context

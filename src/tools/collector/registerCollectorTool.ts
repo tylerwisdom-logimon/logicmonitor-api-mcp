@@ -5,6 +5,7 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { CollectorOperationArgsSchema } from '../../resources/collector/collectorZodSchemas.js';
 import { CollectorHandler } from '../../resources/collector/collectorHandler.js';
+import { buildToolResponse } from '../utils/tool-response.js';
 
 /**
  * Registers the lm_collector tool with the MCP server
@@ -30,15 +31,11 @@ Note: Collector get, create, update, and delete operations are not yet supported
     async (args: any) => {
       const handler = createHandler();
       const result = await handler.handleOperation(args);
-      
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
+
+      return buildToolResponse(args, result, {
+        resourceName: 'collector',
+        resourceTitle: 'LogicMonitor collector'
+      });
     }
   );
 }

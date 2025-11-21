@@ -5,6 +5,7 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { DeviceDataOperationArgsSchema } from '../../resources/deviceData/deviceDataZodSchemas.js';
 import { DeviceDataHandler } from '../../resources/deviceData/deviceDataHandler.js';
+import { buildToolResponse } from '../utils/tool-response.js';
 
 /**
  * Registers the lm_device_data tool with the MCP server
@@ -35,15 +36,11 @@ Note: This is a read-only tool for querying monitoring data.`,
     async (args: any) => {
       const handler = createHandler();
       const result = await handler.handleOperation(args);
-      
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
+
+      return buildToolResponse(args, result, {
+        resourceName: 'deviceData',
+        resourceTitle: 'LogicMonitor device data'
+      });
     }
   );
 }

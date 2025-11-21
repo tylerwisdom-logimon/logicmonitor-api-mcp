@@ -18,10 +18,12 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
-  OperationResult
+  OperationResult,
+  OperationType
 } from '../../types/operations.js';
 import type { BatchResult, BatchItem } from '../../utils/batchProcessor.js';
 import { validateDashboardOperation } from './dashboardZodSchemas.js';
+import { getDashboardLink } from '../../utils/resourceLinks.js';
 
 export class DashboardHandler extends ResourceHandler<LMDashboard> {
   constructor(
@@ -351,6 +353,11 @@ export class DashboardHandler extends ResourceHandler<LMDashboard> {
     return result;
   }
 
+  protected override enhanceResult(operation: OperationType, result: OperationResult<LMDashboard>): void {
+    super.enhanceResult(operation, result);
+    this.attachDashboardLinks(result);
+  }
+
   private isBatchCreate(args: Record<string, unknown>): boolean {
     return !!(args.dashboards && Array.isArray(args.dashboards));
   }
@@ -383,6 +390,60 @@ export class DashboardHandler extends ResourceHandler<LMDashboard> {
       throw new McpError(ErrorCode.InvalidParams, 'Dashboard ID is required');
     }
     return id;
+  }
+
+  private attachDashboardLinks(result: OperationResult<LMDashboard>): void {
+    if (result.data) {
+      this.addLinkToDashboard(result.data as unknown as Record<string, unknown>);
+    }
+    if (Array.isArray(result.items)) {
+      result.items.forEach(item =>
+        this.addLinkToDashboard(item as unknown as Record<string, unknown>)
+      );
+    }
+  }
+
+  private addLinkToDashboard(dashboard: Record<string, unknown> | undefined): void {
+    if (!dashboard) {
+      return;
+    }
+    try {
+      const dashboardId = dashboard.id ?? dashboard.dashboardId;
+      if (dashboardId === null || typeof dashboardId === 'undefined') {
+        return;
+      }
+      const groupIds = this.parseGroupIds(dashboard.groupId ?? dashboard.groupIds);
+      dashboard.linkUrl = getDashboardLink({
+        company: this.client.getAccount(),
+        dashboardId: dashboardId as number | string,
+        groupIds
+      });
+    } catch {
+      // Ignore link generation failures
+    }
+  }
+
+  private parseGroupIds(value: unknown): Array<number | string> | undefined {
+    if (!value) {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      const filtered = value
+        .map(entry => (typeof entry === 'number' || typeof entry === 'string' ? entry : undefined))
+        .filter((entry): entry is number | string => typeof entry !== 'undefined');
+      return filtered.length ? filtered : undefined;
+    }
+    if (typeof value === 'string') {
+      const parts = value
+        .split(',')
+        .map(part => part.trim())
+        .filter(Boolean);
+      return parts.length ? parts : undefined;
+    }
+    if (typeof value === 'number') {
+      return [value];
+    }
+    return undefined;
   }
 }
 

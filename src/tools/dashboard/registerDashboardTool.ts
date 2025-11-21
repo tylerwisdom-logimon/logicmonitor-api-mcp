@@ -5,6 +5,7 @@
 import { McpServer } from '@socotra/modelcontextprotocol-sdk/server/mcp.js';
 import { DashboardOperationArgsSchema } from '../../resources/dashboard/dashboardZodSchemas.js';
 import { DashboardHandler } from '../../resources/dashboard/dashboardHandler.js';
+import { buildToolResponse } from '../utils/tool-response.js';
 
 /**
  * Registers the lm_dashboard tool with the MCP server
@@ -38,15 +39,11 @@ Batch operations support:
     async (args: any) => {
       const handler = createHandler();
       const result = await handler.handleOperation(args);
-      
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: JSON.stringify(result, null, 2)
-          }
-        ]
-      };
+
+      return buildToolResponse(args, result, {
+        resourceName: 'dashboard',
+        resourceTitle: 'LogicMonitor dashboard'
+      });
     }
   );
 }

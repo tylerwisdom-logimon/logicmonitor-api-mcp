@@ -14,9 +14,11 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
-  OperationResult
+  OperationResult,
+  OperationType
 } from '../../types/operations.js';
 import { validateListAlerts, validateGetAlert, validateUpdateAlert } from './alertZodSchemas.js';
+import { getAlertLink } from '../../utils/resourceLinks.js';
 
 export class AlertHandler extends ResourceHandler<LMAlert> {
   constructor(client: LogicMonitorClient, sessionManager: SessionManager, sessionId?: string) {
@@ -152,5 +154,39 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
 
   protected async handleDelete(_args: DeleteOperationArgs): Promise<OperationResult<LMAlert>> {
     throw new McpError(ErrorCode.InvalidRequest, 'Alert deletion is not supported via API');
+  }
+
+  protected override enhanceResult(operation: OperationType, result: OperationResult<LMAlert>): void {
+    super.enhanceResult(operation, result);
+    this.attachAlertLinks(result);
+  }
+
+  private attachAlertLinks(result: OperationResult<LMAlert>): void {
+    if (result.data) {
+      this.addLinkToAlert(result.data as unknown as Record<string, unknown>);
+    }
+    if (Array.isArray(result.items)) {
+      result.items.forEach(item =>
+        this.addLinkToAlert(item as unknown as Record<string, unknown>)
+      );
+    }
+  }
+
+  private addLinkToAlert(alert: Record<string, unknown> | undefined): void {
+    if (!alert) {
+      return;
+    }
+    try {
+      const alertId = alert.id ?? alert.alertId ?? alert.internalId;
+      if (!alertId) {
+        return;
+      }
+      alert.linkUrl = getAlertLink({
+        company: this.client.getAccount(),
+        alertId: alertId as number | string
+      });
+    } catch {
+      // Ignore failures to keep responses flowing
+    }
   }
 }
