@@ -31,12 +31,12 @@
   "license": "MPL-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/LogicMonitor/lm-api-mcp.git"
+    "url": "git+https://github.com/LogicMonitor/logicmonitor-api-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/LogicMonitor/lm-api-mcp/issues"
+    "url": "https://github.com/LogicMonitor/logicmonitor-api-mcp/issues"
   },
-  "homepage": "https://github.com/LogicMonitor/lm-api-mcp#readme",
+  "homepage": "https://github.com/LogicMonitor/logicmonitor-api-mcp#readme",
   "engines": {
     "node": ">=18.0.0"
   },

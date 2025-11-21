@@ -1,4 +1,4 @@
-[![Test Suite](https://github.com/logicmonitor/lm-api-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/logicmonitor/lm-api-mcp/actions/workflows/test.yml)
+[![Test Suite](https://github.com/logicmonitor/logicmonitor-api-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/logicmonitor/logicmonitor-api-mcp/actions/workflows/test.yml)
 
 # LogicMonitor MCP Server
 
@@ -42,8 +42,8 @@ npm install -g logicmonitor-api-mcp
 
 ```bash
 # Clone the repository
-git clone https://github.com/stevevillardi/lm-api-mcp.git
-cd lm-api-mcp
+git clone https://github.com/stevevillardi/logicmonitor-api-mcp.git
+cd logicmonitor-api-mcp
 
 # Install dependencies
 npm install
@@ -86,7 +86,7 @@ If installed from source, use the full path:
   "mcpServers": {
     "logicmonitor": {
       "command": "node",
-      "args": ["/path/to/lm-api-mcp/dist/index.js", "--stdio"],
+      "args": ["/path/to/logicmonitor-api-mcp/dist/index.js", "--stdio"],
       "env": {
         "LM_ACCOUNT": "your-account-name",
         "LM_BEARER_TOKEN": "your-bearer-token"
