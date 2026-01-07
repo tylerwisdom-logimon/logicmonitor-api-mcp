@@ -38,7 +38,7 @@ npm install -g logicmonitor-api-mcp
 
 ```bash
 # Clone the repository
-git clone https://github.com/stevevillardi/lm-api-mcp.git
+git clone https://github.com/logicmonitor/lm-api-mcp.git
 cd lm-api-mcp
 
 # Install dependencies
