@@ -1,4 +1,7 @@
 [![Test Suite](https://github.com/logicmonitor/logicmonitor-api-mcp/actions/workflows/test.yml/badge.svg)](https://github.com/logicmonitor/logicmonitor-api-mcp/actions/workflows/test.yml)
+![NPM Version](https://img.shields.io/npm/v/logicmonitor-api-mcp)
+![NPM Downloads](https://img.shields.io/npm/d18m/logicmonitor-api-mcp)
+
 
 # LogicMonitor MCP Server
 
