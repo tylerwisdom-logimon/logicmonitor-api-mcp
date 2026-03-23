@@ -7,7 +7,6 @@ import { ResourceHandler } from '../base/resourceHandler.js';
 import { BatchOperationResolver } from '../base/batchResolver.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import { throwBatchFailure } from '../../utils/batchUtils.js';
 import type { LMWebsiteGroup } from '../../types/logicmonitor.js';
 import type {
@@ -29,7 +28,7 @@ import {
 export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
   constructor(client: LogicMonitorClient, sessionManager: SessionManager, sessionId?: string) {
     super(
-      { resourceType: 'websiteGroup', resourceName: 'websiteGroup', idField: 'id' },
+      { resourceType: 'websiteGroup', resourceName: 'websiteGroup', idField: 'id', pluralKey: 'groups' },
       client,
       sessionManager,
       sessionId
@@ -39,11 +38,7 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const validated = validateListWebsiteGroups(args);
     const { fields, filter, size, offset, autoPaginate } = validated;
-    const fieldConfig = sanitizeFields('websiteGroup', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown website group field(s): ${fieldConfig.invalid.join(', ')}`);
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listWebsiteGroups({
       fields: fieldConfig.fieldsParam,
@@ -61,25 +56,20 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'list', result);
+    this.recordAndStore('list', result);
     return result;
   }
 
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const validated = validateGetWebsiteGroup(args);
     const groupId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof groupId !== 'number') {
       throw new McpError(ErrorCode.InvalidParams, 'Website group ID must be a number');
     }
 
     const { fields } = validated;
-    const fieldConfig = sanitizeFields('websiteGroup', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown website group field(s): ${fieldConfig.invalid.join(', ')}`);
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.getWebsiteGroup(groupId, {
       fields: fieldConfig.fieldsParam
@@ -92,25 +82,21 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('get', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'get', result);
+    this.recordAndStore('get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'websiteGroup', groupId, apiResult.data);
     return result;
   }
 
   protected async handleCreate(args: CreateOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const validated = validateCreateWebsiteGroup(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isBatch = !!((validated as any).groups && Array.isArray((validated as any).groups));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const batchOptions = BatchOperationResolver.extractBatchOptions(validated as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const groupsInput = isBatch ? (validated as any).groups : [validated];
+    const validatedRecord = validated as Record<string, unknown>;
+    const isBatch = this.isBatchCreate(validatedRecord);
+    const batchOptions = BatchOperationResolver.extractBatchOptions(validatedRecord);
+    const groupsInput = this.normalizeCreateInput(validatedRecord);
 
     const batchResult = await this.processBatch(
       groupsInput,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (group: Record<string, unknown>) => this.client.createWebsiteGroup(group as any),
+      async (group: Record<string, unknown>) => this.client.createWebsiteGroup(group as Parameters<LogicMonitorClient['createWebsiteGroup']>[0]),
       {
         maxConcurrent: batchOptions.maxConcurrent || 5,
         continueOnError: batchOptions.continueOnError ?? true,
@@ -131,8 +117,7 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
         meta: entry.meta
       };
 
-      this.storeInSession('create', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'create', result);
+      this.recordAndStore('create', result);
       return result;
     }
 
@@ -144,16 +129,14 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       results: batchResult.results
     };
 
-    this.storeInSession('create', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'create', result);
+    this.recordAndStore('create', result);
     return result;
   }
 
   protected async handleUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const validated = validateUpdateWebsiteGroup(args);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (BatchOperationResolver.isBatchOperation(validated as any, 'groups')) {
+    if (BatchOperationResolver.isBatchOperation(validated, 'groups')) {
       return this.handleBatchUpdate(validated);
     }
 
@@ -162,8 +145,7 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       throw new McpError(ErrorCode.InvalidParams, 'Website group ID must be a number');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { id: _id, operation: _operation, updates: _updateData, applyToPrevious: _applyToPrevious, filter: _filter, batchOptions: _batchOptions, ...rest } = validated as any;
+    const { id: _id, operation: _operation, updates: _updateData, applyToPrevious: _applyToPrevious, filter: _filter, batchOptions: _batchOptions, ...rest } = validated as Record<string, unknown>;
     const apiResult = await this.client.updateWebsiteGroup(groupId, rest);
 
     const result: OperationResult<LMWebsiteGroup> = {
@@ -173,16 +155,14 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       meta: apiResult.meta
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'update', result);
+    this.recordAndStore('update', result);
     return result;
   }
 
   protected async handleDelete(args: DeleteOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const validated = validateDeleteWebsiteGroup(args);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (BatchOperationResolver.isBatchOperation(validated as any, 'groups')) {
+    if (BatchOperationResolver.isBatchOperation(validated, 'groups')) {
       return this.handleBatchDelete(validated);
     }
 
@@ -191,32 +171,28 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       throw new McpError(ErrorCode.InvalidParams, 'Website group ID must be a number');
     }
 
+    const validatedRecord = validated as Record<string, unknown>;
     const deleteParams: { deleteChildren?: boolean } = {};
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if ((validated as any).deleteChildren !== undefined) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      deleteParams.deleteChildren = (validated as any).deleteChildren;
+    if (validatedRecord.deleteChildren !== undefined) {
+      deleteParams.deleteChildren = validatedRecord.deleteChildren as boolean;
     }
-    
+
     const apiResult = await this.client.deleteWebsiteGroup(groupId, deleteParams);
 
     const result: OperationResult<LMWebsiteGroup> = {
       success: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data: { groupId } as any,
+      data: { groupId } as unknown as LMWebsiteGroup,
       raw: apiResult.raw,
       meta: apiResult.meta
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'delete', result);
+    this.recordAndStore('delete', result);
     return result;
   }
 
   private async handleBatchUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolution = await BatchOperationResolver.resolveItems<any>(
+    const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
       args,
       this.sessionContext,
       this.client,
@@ -226,9 +202,10 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
 
     BatchOperationResolver.validateBatchSafety(resolution, 'update');
 
+    const globalUpdates = (args.updates || {}) as Record<string, unknown>;
     const updateOps = resolution.items.map(item => ({
-      groupId: item.id || item.groupId,
-      updates: args.updates || item
+      groupId: (item.id || item.groupId) as number,
+      updates: { ...item, ...globalUpdates }
     }));
 
     const batchResult = await this.processBatch(
@@ -248,15 +225,13 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
       results: batchResult.results
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'update', result);
+    this.recordAndStore('update', result);
     return result;
   }
 
   private async handleBatchDelete(args: DeleteOperationArgs): Promise<OperationResult<LMWebsiteGroup>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolution = await BatchOperationResolver.resolveItems<any>(
+    const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
       args,
       this.sessionContext,
       this.client,
@@ -267,7 +242,7 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
     BatchOperationResolver.validateBatchSafety(resolution, 'delete');
 
     const deleteOps = resolution.items.map(item => ({
-      groupId: item.id || item.groupId,
+      groupId: (item.id || item.groupId) as number,
       deleteChildren: (args.deleteChildren as boolean) ?? false
     }));
 
@@ -284,13 +259,10 @@ export class WebsiteGroupHandler extends ResourceHandler<LMWebsiteGroup> {
     const result: OperationResult<LMWebsiteGroup> = {
       success: batchResult.success,
       summary: batchResult.summary,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      results: batchResult.results as any
+      results: batchResult.results as OperationResult<LMWebsiteGroup>['results']
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'websiteGroup', 'delete', result);
+    this.recordAndStore('delete', result);
     return result;
   }
 }
-

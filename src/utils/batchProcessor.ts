@@ -120,11 +120,11 @@ export class BatchProcessor {
           if (!continueOnError) {
             throw error;
           }
-        }
-
-        completed++;
-        if (onProgress) {
-          onProgress(completed, total);
+        } finally {
+          completed++;
+          if (onProgress) {
+            onProgress(completed, total);
+          }
         }
       });
 

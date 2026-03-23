@@ -8,7 +8,6 @@ import { ResourceHandler } from '../base/resourceHandler.js';
 import { BatchOperationResolver } from '../base/batchResolver.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import { throwBatchFailure } from '../../utils/batchUtils.js';
 import type { LMDevice } from '../../types/logicmonitor.js';
 import type {
@@ -17,10 +16,9 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
-  OperationResult,
-  OperationType
+  OperationResult
 } from '../../types/operations.js';
-import type { BatchResult, BatchItem } from '../../utils/batchProcessor.js';
+import type { BatchResult } from '../../utils/batchProcessor.js';
 import {
   validateListDevices,
   validateGetDevice,
@@ -40,7 +38,12 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       {
         resourceType: 'device',
         resourceName: 'device',
-        idField: 'id'
+        idField: 'id',
+        pluralKey: 'devices',
+        linkBuilder: (account, resource) => {
+          const id = resource.id ?? resource.deviceId;
+          return id != null ? getDeviceLink({ company: account, deviceId: id as number | string }) : undefined;
+        }
       },
       client,
       sessionManager,
@@ -51,14 +54,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMDevice>> {
     const validated = validateListDevices({ ...args, operation: 'list' as const });
     const { fields, filter, size, offset, autoPaginate, start, end, netflowFilter, includeDeletedResources } = validated;
-    const fieldConfig = sanitizeFields('device', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown device field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listDevices({
       fields: fieldConfig.fieldsParam,
@@ -86,19 +82,18 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       raw: apiResult.raw
     };
 
-    this.attachDeviceLinks(result);
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'list', result);
+
+    this.recordAndStore('list', result);
 
     return result;
   }
 
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMDevice>> {
     const validated = validateGetDevice(args);
-    
+
     // Resolve ID from args or session context
     const deviceId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof deviceId !== 'number') {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -107,14 +102,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
     }
 
     const { fields, start, end, netflowFilter, needStcGrpAndSortedCP } = validated;
-    const fieldConfig = sanitizeFields('device', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown device field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.getDevice(deviceId, {
       fields: fieldConfig.fieldsParam,
@@ -139,9 +127,8 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       raw: apiResult.raw
     };
 
-    this.attachDeviceLinks(result);
-    this.storeInSession('get', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'get', result);
+
+    this.recordAndStore('get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'device', deviceId, apiResult.data);
 
     return result;
@@ -150,14 +137,12 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
   protected async handleCreate(args: CreateOperationArgs): Promise<OperationResult<LMDevice>> {
     const validated = validateCreateDevice(args);
     const isBatch = this.isBatchCreate(validated);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const batchOptions = BatchOperationResolver.extractBatchOptions(validated as any);
+    const batchOptions = BatchOperationResolver.extractBatchOptions(validated);
     const devicesInput = this.normalizeCreateInput(validated);
 
     const batchResult = await this.processBatch(
       devicesInput,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (devicePayload) => this.client.createDevice(devicePayload as any),
+      async (devicePayload) => this.client.createDevice(devicePayload as Parameters<LogicMonitorClient['createDevice']>[0]),
       {
         maxConcurrent: batchOptions.maxConcurrent || 5,
         continueOnError: batchOptions.continueOnError ?? true,
@@ -173,7 +158,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
         throwBatchFailure('Device create', batchResult.results[0]);
       }
       const createdDevice = entry.data as LMDevice;
-      
+
       const result: OperationResult<LMDevice> = {
         success: true,
         data: createdDevice,
@@ -181,18 +166,14 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
         meta: entry.meta ?? undefined
       };
 
-      this.attachDeviceLinks(result);
-      this.storeInSession('create', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'create', result);
+  
+      this.recordAndStore('create', result);
       this.sessionManager.cacheResource(this.sessionContext.id, 'device', createdDevice.id, createdDevice);
 
       return result;
     }
 
-    const successful = normalized.filter(entry => entry.success && entry.data);
-    const successfulDevices = successful
-      .filter((entry): entry is typeof entry & { data: LMDevice } => entry.data !== undefined)
-      .map(entry => entry.data);
+    const successfulDevices = this.extractSuccessfulItems(normalized);
 
     const result: OperationResult<LMDevice> = {
       success: batchResult.success,
@@ -206,9 +187,8 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       results: normalized
     };
 
-    this.attachDeviceLinks(result);
-    this.storeInSession('create', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'create', result);
+
+    this.recordAndStore('create', result);
 
     return result;
   }
@@ -223,7 +203,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
 
     // Single device update
     const deviceId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof deviceId !== 'number') {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -241,9 +221,8 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       meta: apiResult.meta
     };
 
-    this.attachDeviceLinks(result);
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'update', result);
+
+    this.recordAndStore('update', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'device', deviceId, apiResult.data);
 
     return result;
@@ -259,7 +238,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
 
     // Single device delete
     const deviceId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof deviceId !== 'number') {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -276,8 +255,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       meta: apiResult.meta
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'delete', result);
+    this.recordAndStore('delete', result);
 
     return result;
   }
@@ -287,7 +265,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
    */
   private async handleBatchUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMDevice>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    
+
     // Resolve items from various sources
     const resolution = await BatchOperationResolver.resolveItems<LMDevice>(
       args,
@@ -299,11 +277,15 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
 
     BatchOperationResolver.validateBatchSafety(resolution, 'update');
 
-    // Build update operations
-    const updateOps = resolution.items.map(item => ({
-      deviceId: (item as unknown as Record<string, unknown>).deviceId || item.id,
-      payload: args.updates || this.buildUpdatePayload(item as unknown as Record<string, unknown>)
-    }));
+    // Build update operations - merge item properties with args.updates overrides
+    const updates = (args.updates || {}) as Record<string, unknown>;
+    const updateOps = resolution.items.map(item => {
+      const itemRecord = item as unknown as Record<string, unknown>;
+      return {
+        deviceId: itemRecord.deviceId || item.id,
+        payload: { ...this.buildUpdatePayload(itemRecord), ...updates }
+      };
+    });
 
     const batchResult = await this.processBatch(
       updateOps,
@@ -316,13 +298,11 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
     );
 
     const normalized = this.normalizeBatchResults(batchResult);
-    const successful = normalized.filter(entry => entry.success && entry.data);
+    const successfulDevices = this.extractSuccessfulItems(normalized);
 
     const result: OperationResult<LMDevice> = {
       success: batchResult.success,
-      items: successful
-        .filter((entry): entry is typeof entry & { data: LMDevice } => entry.data !== undefined)
-        .map(entry => entry.data),
+      items: successfulDevices,
       summary: batchResult.summary,
       request: {
         batch: true,
@@ -333,9 +313,8 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       results: normalized
     };
 
-    this.attachDeviceLinks(result);
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'update', result);
+
+    this.recordAndStore('update', result);
 
     return result;
   }
@@ -345,10 +324,9 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
    */
   private async handleBatchDelete(args: DeleteOperationArgs): Promise<OperationResult<LMDevice>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    
+
     // Resolve items from various sources
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolution = await BatchOperationResolver.resolveItems<any>(
+    const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
       args,
       this.sessionContext,
       this.client,
@@ -360,7 +338,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
 
     // Extract device IDs
     const deviceIds = resolution.items.map(item => ({
-      deviceId: (item as Record<string, unknown>).deviceId || item.id
+      deviceId: (item.deviceId || item.id) as number
     }));
 
     const batchResult = await this.processBatch(
@@ -387,57 +365,21 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
       results: normalized
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'device', 'delete', result);
+    this.recordAndStore('delete', result);
 
     return result;
   }
 
-  protected override enhanceResult(operation: OperationType, result: OperationResult<LMDevice>): void {
-    super.enhanceResult(operation, result);
-    this.attachDeviceLinks(result);
-  }
-
   /**
-   * Helper methods
+   * Override normalizeCreateInput to apply device-specific field mapping.
    */
-  private attachDeviceLinks(result: OperationResult<LMDevice>): void {
-    if (result.data) {
-      this.addLinkToDevice(result.data as unknown as Record<string, unknown>);
-    }
-    if (Array.isArray(result.items)) {
-      result.items.forEach(item =>
-        this.addLinkToDevice(item as unknown as Record<string, unknown>)
-      );
-    }
-  }
-
-  private addLinkToDevice(device: Record<string, unknown> | undefined): void {
-    if (!device) return;
-    const deviceId = device.id ?? device.deviceId;
-    if (deviceId === null || typeof deviceId === 'undefined') {
-      return;
-    }
-    try {
-      device.linkUrl = getDeviceLink({
-        company: this.client.getAccount(),
-        deviceId: deviceId as number | string
-      });
-    } catch {
-      // Ignore link generation errors
-    }
-  }
-
-  private isBatchCreate(args: Record<string, unknown>): boolean {
-    return !!(args.devices && Array.isArray(args.devices) && args.devices.length > 1);
-  }
-
-  private normalizeCreateInput(args: Record<string, unknown>): Array<Record<string, unknown>> {
+  protected override normalizeCreateInput(args: Record<string, unknown>): Array<Record<string, unknown>> {
     if (args.devices && Array.isArray(args.devices)) {
       return args.devices.map(device => this.mapCreateDeviceInput(device));
     }
     return [this.mapCreateDeviceInput(args)];
   }
+
 
   private mapCreateDeviceInput(input: Record<string, unknown>) {
     const customProps = Array.isArray(input.customProperties)
@@ -461,7 +403,7 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
 
     if (input.displayName !== undefined) payload.displayName = input.displayName;
     if (input.disableAlerting !== undefined) payload.disableAlerting = input.disableAlerting;
-    
+
     if (Array.isArray(input.customProperties)) {
       payload.customProperties = input.customProperties;
     } else if (Array.isArray(input.properties)) {
@@ -474,17 +416,4 @@ export class DeviceHandler extends ResourceHandler<LMDevice> {
 
     return payload;
   }
-
-  private normalizeBatchResults(batch: BatchResult<LMDevice>): Array<BatchItem<LMDevice>> {
-    return batch.results.map(entry => ({
-      index: entry.index,
-      success: entry.success,
-      data: entry.data,
-      error: entry.error,
-      diagnostics: entry.diagnostics,
-      meta: entry.meta,
-      raw: entry.raw
-    }));
-  }
 }
-

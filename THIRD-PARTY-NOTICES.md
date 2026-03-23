@@ -19,13 +19,13 @@ The following table summarizes the licenses used by this project's dependencies:
 
 | Package | Version | License | Repository |
 |---------|---------|---------|------------|
-| @modelcontextprotocol/sdk | 1.20.2 | MIT | https://github.com/modelcontextprotocol/typescript-sdk |
-| axios | 1.13.0 | MIT | https://github.com/axios/axios |
-| dotenv | 16.6.1 | BSD-2-Clause | https://github.com/motdotla/dotenv |
-| express | 5.1.0 | MIT | https://github.com/expressjs/express |
-| helmet | 8.1.0 | MIT | https://github.com/helmetjs/helmet |
-| joi | 17.13.3 | BSD-3-Clause | https://github.com/hapijs/joi |
-| winston | 3.18.3 | MIT | https://github.com/winstonjs/winston |
+| @modelcontextprotocol/sdk | ^1.27.1 | MIT | https://github.com/modelcontextprotocol/typescript-sdk |
+| axios | ^1.13.6 | MIT | https://github.com/axios/axios |
+| dotenv | ^17.3.1 | BSD-2-Clause | https://github.com/motdotla/dotenv |
+| express | ^5.2.1 | MIT | https://github.com/expressjs/express |
+| express-rate-limit | ^8.3.1 | MIT | https://github.com/express-rate-limit/express-rate-limit |
+| winston | ^3.19.0 | MIT | https://github.com/winstonjs/winston |
+| zod | ^4.3.6 | MIT | https://github.com/colinhacks/zod |
 
 ## License Texts
 
@@ -108,5 +108,5 @@ https://github.com/LogicMonitor/logicmonitor-api-mcp/issues
 
 ---
 
-*Last updated: November 14, 2025*
+*Last updated: March 21, 2026*
 

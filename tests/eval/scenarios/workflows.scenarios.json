@@ -1,0 +1,450 @@
+[
+  {
+    "id": "workflow-export-device-metrics",
+    "description": "Full export-device-metrics workflow: find device by name → list datasources → list instances → get data (4 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "device", "device-data", "metrics", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "I need to export CPU metrics from our production web server called 'web-prod-01'. First, find that device so we know its ID.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": { "oneOf": ["list", "get"] },
+              "filter": { "contains": "web-prod" }
+            }
+          }
+        ],
+        "syntheticResult": "Found device: ID 750, 'web-prod-01' (IP: 10.0.1.50, hostStatus: alive, preferredCollectorId: 12). Stored in session as lastDevice, lastDeviceId=750."
+      },
+      {
+        "userPrompt": "Good, the device ID is 750. Now show me what datasources are available on it. I'm looking for CPU-related ones.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "list_datasources",
+              "deviceId": 750
+            }
+          }
+        ],
+        "syntheticResult": "Listed 8 datasources for device 750. Matching CPU filter: [{ id: 101, name: 'WinCPU', monitoringInstanceNumber: 4 }, { id: 102, name: 'CPUBusyPercent', monitoringInstanceNumber: 1 }]. Stored in session."
+      },
+      {
+        "userPrompt": "Let's look at the instances for the WinCPU datasource (ID 101) on that device.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "list_instances",
+              "deviceId": 750,
+              "datasourceId": 101
+            }
+          }
+        ],
+        "syntheticResult": "Listed 4 instances for datasource 101 on device 750: [{ id: 1, name: 'CPU-0' }, { id: 2, name: 'CPU-1' }, { id: 3, name: 'CPU-2' }, { id: 4, name: 'CPU-3' }]. Stored in session."
+      },
+      {
+        "userPrompt": "Now pull the actual performance data for all 4 CPU instances over the last 24 hours.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "get_data",
+              "deviceId": 750,
+              "datasourceId": 101,
+              "instanceIds": { "present": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-batch-device-update",
+    "description": "Full batch-device-update workflow: list → review → batch update → verify (4 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "device", "batch", "update", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "I need to disable alerting on all devices in our staging environment. The staging devices all have 'staging' in their display name. Let's start by finding them.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "staging" }
+            }
+          }
+        ],
+        "syntheticResult": "Listed 8 devices matching filter. Session variables created: lastDeviceList (8 devices), lastDeviceListIds ([201,202,203,204,205,206,207,208]). Devices: staging-web-01, staging-web-02, staging-db-01, staging-db-02, staging-app-01, staging-app-02, staging-cache-01, staging-lb-01."
+      },
+      {
+        "userPrompt": "Those look right — all 8 staging servers. Go ahead and disable alerting on all of them using the session variable.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "update",
+              "applyToPrevious": { "type": "string" },
+              "disableAlerting": true
+            }
+          }
+        ],
+        "syntheticResult": "Batch update completed: 8/8 succeeded. All devices now have disableAlerting=true. Session variables updated: lastUpdatedDevices."
+      },
+      {
+        "userPrompt": "Great, now let's verify the changes took effect. List those staging devices again and show me their alerting status.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "staging" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-alert-triage",
+    "description": "Full alert-triage workflow: list critical → get details → ack → add note (4 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "alert", "triage", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "We're getting paged about critical alerts. Show me all the critical severity alerts right now.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "list",
+              "filter": { "pattern": "severity[>:=]*4" }
+            }
+          }
+        ],
+        "syntheticResult": "Listed 3 critical alerts:\n- Alert LM5001: 'CPU Critical' on web-prod-01 (started 2 hours ago)\n- Alert LM5002: 'Disk Space Critical' on db-prod-01 (started 30 minutes ago)\n- Alert LM5003: 'Memory Critical' on app-prod-03 (started 5 minutes ago)\nSession variables: lastAlertList, lastAlertListIds ([\"LM5001\",\"LM5002\",\"LM5003\"])."
+      },
+      {
+        "userPrompt": "The disk space alert on db-prod-01 looks most urgent. Get me the full details on alert LM5002.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "get",
+              "id": { "oneOf": ["LM5002", "LM5002"] }
+            }
+          }
+        ],
+        "syntheticResult": "Alert LM5002 details: Disk Space Critical on db-prod-01. DataPoint: PercentUsed = 97.3%. Threshold: > 95%. Instance: /dev/sda1. Resource: db-prod-01 (ID: 500). Started: 30 minutes ago. Severity: Critical (4). Not yet acknowledged."
+      },
+      {
+        "userPrompt": "I'm going to look into this now. Acknowledge that alert with a comment saying I'm investigating the disk space issue.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "update",
+              "action": "ack",
+              "ackComment": { "type": "string" }
+            }
+          }
+        ],
+        "syntheticResult": "Alert LM5002 acknowledged successfully with comment."
+      },
+      {
+        "userPrompt": "Also add a note to that same alert saying we're planning to expand the disk partition tonight during the maintenance window.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "update",
+              "action": "note",
+              "note": { "type": "string" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-collector-health-check",
+    "description": "Full collector-health-check workflow: list collectors → identify issues → review groups (3 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "collector", "collector-group", "health", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "I want to do a health check on all our collectors. Show me the full list with their status and device counts.",
+        "expected": [
+          {
+            "toolName": "lm_collector",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ],
+        "syntheticResult": "Listed 6 collectors:\n- ID 1: 'collector-east-01' status=up, numberOfHosts=245, build=34.100\n- ID 2: 'collector-east-02' status=up, numberOfHosts=312, build=34.100\n- ID 3: 'collector-west-01' status=up, numberOfHosts=198, build=34.050\n- ID 4: 'collector-west-02' status=down, numberOfHosts=0, build=33.900\n- ID 5: 'collector-dr-01' status=up, numberOfHosts=52, build=34.100\n- ID 6: 'collector-dr-02' status=up, numberOfHosts=48, build=34.100\nSession: lastCollectorList, lastCollectorListIds."
+      },
+      {
+        "userPrompt": "Looks like collector-west-02 is down. Let's also check the collector groups to see how they're organized and if auto-balancing is configured.",
+        "expected": [
+          {
+            "toolName": "lm_collector_group",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ],
+        "syntheticResult": "Listed 3 collector groups:\n- ID 10: 'East Coast' numOfCollectors=2, autoBalance=true, threshold=500\n- ID 11: 'West Coast' numOfCollectors=2, autoBalance=false\n- ID 12: 'DR Site' numOfCollectors=2, autoBalance=true, threshold=200\nSession: lastCollectorGroupList."
+      },
+      {
+        "userPrompt": "The West Coast group has auto-balance disabled and one of its collectors is down. Let's enable auto-balance on that group. The group ID is 11.",
+        "expected": [
+          {
+            "toolName": "lm_collector_group",
+            "arguments": {
+              "operation": "update",
+              "id": 11,
+              "autoBalance": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-user-audit-cleanup",
+    "description": "Full user-audit workflow: list users → inspect suspicious account → suspend it (3 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "user", "audit", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "I need to audit our LogicMonitor user accounts. List all users and show me their names, roles, and last login info.",
+        "expected": [
+          {
+            "toolName": "lm_user",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ],
+        "syntheticResult": "Listed 12 users:\n- ID 1: admin@company.com (Administrator, lastLogin: 2026-03-22)\n- ID 2: jdoe@company.com (Administrator, lastLogin: 2025-06-15)\n- ID 3: asmith@company.com (Readonly, lastLogin: 2026-03-21)\n- ID 55: old-api-user (API-only, lastLogin: 2024-01-10)\n- ID 56: temp-contractor (Readonly, lastLogin: 2025-02-28)\n... and 7 more active users.\nSession: lastUserList, lastUserListIds."
+      },
+      {
+        "userPrompt": "User 55 'old-api-user' hasn't logged in since January 2024, over two years ago. Let me see the full details on that account.",
+        "expected": [
+          {
+            "toolName": "lm_user",
+            "arguments": {
+              "operation": "get",
+              "id": 55
+            }
+          }
+        ],
+        "syntheticResult": "User 55 details: username='old-api-user', email='api-legacy@company.com', apionly=true, status='active', roles=[{id: 5, name: 'API-Only'}], lastLogin: 2024-01-10, note: 'Created for legacy integration'. No recent API activity detected."
+      },
+      {
+        "userPrompt": "That account is definitely stale. Suspend it and add a note that it was disabled during the March 2026 security audit.",
+        "expected": [
+          {
+            "toolName": "lm_user",
+            "arguments": {
+              "operation": "update",
+              "id": 55,
+              "status": { "pattern": "suspend" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-dashboard-clone",
+    "description": "Full dashboard-clone workflow: find source → get config → create clone (3 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "dashboard", "clone", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "I want to clone our Production Overview dashboard to create a Staging Overview. First find the dashboard — it should have 'Production Overview' in the name.",
+        "expected": [
+          {
+            "toolName": "lm_dashboard",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "Production Overview" }
+            }
+          }
+        ],
+        "syntheticResult": "Found 1 dashboard matching filter:\n- ID 42: 'Production Overview' (groupId: 5, 12 widgets, sharable: true)\nSession: lastDashboardList."
+      },
+      {
+        "userPrompt": "That's the one. Get the full configuration for dashboard 42 so we can clone it.",
+        "expected": [
+          {
+            "toolName": "lm_dashboard",
+            "arguments": {
+              "operation": "get",
+              "id": 42
+            }
+          }
+        ],
+        "syntheticResult": "Dashboard 42 full config retrieved: name='Production Overview', groupId=5, description='Main production monitoring dashboard', widgetsConfig={...12 widgets...}, widgetTokens=[{name:'##defaultDeviceGroup##', value:'Production'}], sharable=true. Stored in session as lastDashboard."
+      },
+      {
+        "userPrompt": "Now create the clone. Name it 'Staging Overview', put it in dashboard group 8, and keep the same widget configuration.",
+        "expected": [
+          {
+            "toolName": "lm_dashboard",
+            "arguments": {
+              "operation": "create",
+              "name": { "contains": "Staging Overview" },
+              "groupId": 8
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-incident-response",
+    "description": "Complex cross-tool incident workflow: check alerts → find affected device → check metrics → disable alerting during fix (4 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "alert", "device", "device-data", "incident", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "We're seeing high CPU alerts on production. Show me all current critical alerts related to CPU.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "list",
+              "filter": { "type": "string" }
+            }
+          }
+        ],
+        "syntheticResult": "Listed 2 critical CPU alerts:\n- Alert LM8001: 'CPU Critical' on device 'app-prod-05' (deviceId: 850), severity: 4, value: 98.5%\n- Alert LM8002: 'CPU Critical' on device 'app-prod-06' (deviceId: 851), severity: 4, value: 96.2%\nSession: lastAlertList."
+      },
+      {
+        "userPrompt": "Let's look at device 850 (app-prod-05) to understand what's going on. Get the device details.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "get",
+              "id": 850
+            }
+          }
+        ],
+        "syntheticResult": "Device 850: 'app-prod-05', IP: 10.0.5.50, hostStatus: alive, deviceType: 6, preferredCollectorId: 2, hostGroupIds: [15, 42], customProperties: [{name:'env', value:'production'}, {name:'team', value:'platform'}]. Stored in session as lastDevice."
+      },
+      {
+        "userPrompt": "Pull the CPU metrics for that device so we can see the trend. Check the datasources first.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "list_datasources",
+              "deviceId": 850
+            }
+          }
+        ],
+        "syntheticResult": "Listed 15 datasources for device 850. CPU-related: [{id: 200, name: 'WinCPU', monitoringInstanceNumber: 8}, {id: 201, name: 'CPUBusyPercent', monitoringInstanceNumber: 1}]. Stored in session."
+      },
+      {
+        "userPrompt": "We're going to do a rolling restart on that server. Temporarily disable alerting on device 850 so we don't get paged during the fix.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "update",
+              "id": 850,
+              "disableAlerting": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-large-list-then-session-get",
+    "description": "Large list produces compact response, LLM retrieves full details from session",
+    "category": "workflow",
+    "tags": ["workflow", "device", "session", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "List all the devices in our environment",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ],
+        "syntheticResult": "LogicMonitor device list succeeded. Returned 50 of 156 items. Session keys: lastDeviceList, lastDeviceListIds. Full item details available via: lm_session get key=\"lastDeviceList\" fields=\"id,displayName\" or index=N."
+      },
+      {
+        "userPrompt": "I need the full details for the 5th device in that list. Use the session to retrieve it.",
+        "expected": [
+          {
+            "toolName": "lm_session",
+            "arguments": {
+              "operation": "get",
+              "key": { "contains": "lastDeviceList" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "workflow-device-sdt",
+    "description": "Full device SDT workflow: find device → create SDT → verify SDT is active (3 steps)",
+    "category": "workflow",
+    "tags": ["workflow", "device", "sdt", "multi-step"],
+    "steps": [
+      {
+        "userPrompt": "I need to put our production database server 'db-prod-01' into a maintenance window. First, find that device.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": { "oneOf": ["list", "get"] },
+              "filter": { "contains": "db-prod" }
+            }
+          }
+        ],
+        "syntheticResult": "Found device: ID 500, 'db-prod-01' (IP: 10.0.2.10, hostStatus: alive). Stored in session as lastDevice, lastDeviceId=500."
+      },
+      {
+        "userPrompt": "Good, device ID is 500. Now create a one-time SDT on that device for the next 4 hours. Add a comment saying 'Database maintenance - index rebuild'.",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "create",
+              "type": { "contains": "ResourceSDT" },
+              "deviceId": 500,
+              "comment": { "type": "string" }
+            }
+          }
+        ],
+        "syntheticResult": "SDT created successfully: ID 'R_88', type: ResourceSDT, deviceId: 500, sdtType: oneTime, isEffective: true, comment: 'Database maintenance - index rebuild'. Stored in session."
+      },
+      {
+        "userPrompt": "Now let's verify the SDT is active. List all currently effective SDTs.",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "list",
+              "filter": { "type": "string" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

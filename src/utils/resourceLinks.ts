@@ -1,24 +1,25 @@
-interface BaseArgs {
-  company: string;
-}
+/**
+ * LogicMonitor portal URL builders for resource links.
+ */
 
-interface WithGroups {
+export interface DashboardLinkArgs {
+  company: string;
+  dashboardId: number | string;
   groupIds?: Array<number | string | null | undefined>;
 }
 
-export interface DashboardLinkArgs extends BaseArgs, WithGroups {
-  dashboardId: number | string;
-}
-
-export interface DeviceLinkArgs extends BaseArgs, WithGroups {
+export interface DeviceLinkArgs {
+  company: string;
   deviceId: number | string;
 }
 
-export interface WebsiteLinkArgs extends BaseArgs, WithGroups {
+export interface WebsiteLinkArgs {
+  company: string;
   websiteId: number | string;
 }
 
-export interface AlertLinkArgs extends BaseArgs {
+export interface AlertLinkArgs {
+  company: string;
   alertId: number | string;
 }
 
@@ -37,45 +38,29 @@ function ensureId(id: number | string | undefined, label: string): string {
 }
 
 function baseUrl(company: string): string {
-  const normalized = normalizeCompany(company);
-  return `https://${normalized}.logicmonitor.com/santaba/uiv4`;
-}
-
-function buildGroupSegments(
-  prefix: string,
-  groupIds?: Array<number | string | null | undefined>
-): string[] {
-  if (!groupIds || groupIds.length === 0) {
-    return [];
-  }
-  return groupIds
-    .filter((value): value is number | string => !(value === null || typeof value === 'undefined'))
-    .map(value => `${prefix}-${value}`);
+  return `https://${normalizeCompany(company)}.logicmonitor.com/santaba/uiv4`;
 }
 
 export function getDashboardLink(args: DashboardLinkArgs): string {
   const dashboardId = ensureId(args.dashboardId, 'dashboardId');
-  const segments = [
-    ...buildGroupSegments('dashboardGroups', args.groupIds),
-    `dashboards-${dashboardId}`
-  ];
+  const groupSegments = (args.groupIds ?? [])
+    .filter((v): v is number | string => v != null)
+    .map(v => `dashboardGroups-${v}`);
+  const segments = [...groupSegments, `dashboards-${dashboardId}`];
   return `${baseUrl(args.company)}/dashboards/${segments.join(',')}`;
 }
 
 export function getDeviceLink(args: DeviceLinkArgs): string {
   const deviceId = ensureId(args.deviceId, 'deviceId');
-  const idSegment = encodeURIComponent(deviceId);
-  return `${baseUrl(args.company)}/resources/treeNodes/t-d,id-${idSegment}?source=details&tab=info`;
+  return `${baseUrl(args.company)}/resources/treeNodes/t-d,id-${encodeURIComponent(deviceId)}?source=details&tab=info`;
 }
 
 export function getWebsiteLink(args: WebsiteLinkArgs): string {
   const websiteId = ensureId(args.websiteId, 'websiteId');
-  const idSegment = encodeURIComponent(websiteId);
-  return `${baseUrl(args.company)}/websites/treeNodes/t-s,id-${idSegment}?source=details&tab=info`;
+  return `${baseUrl(args.company)}/websites/treeNodes/t-s,id-${encodeURIComponent(websiteId)}?source=details&tab=info`;
 }
 
 export function getAlertLink(args: AlertLinkArgs): string {
   const alertId = ensureId(args.alertId, 'alertId');
   return `${baseUrl(args.company)}/alerts/${alertId}`;
 }
-

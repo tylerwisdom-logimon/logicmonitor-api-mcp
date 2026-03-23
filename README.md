@@ -10,7 +10,7 @@ A Model Context Protocol (MCP) server that provides secure access to the LogicMo
 
 ## Features
 
-- **Comprehensive Resource Management**: Devices, device groups, websites, website groups, collectors, alerts, users, dashboards, collector groups, and device metrics
+- **Comprehensive Resource Management**: Devices, device groups, websites, website groups, collectors, alerts, users, dashboards, collector groups, device metrics, SDTs, and OpsNotes
 - **Device Metrics & Data**: Retrieve monitoring data including datasources, instances, and time-series metrics
 - **Batch Operations**: Process multiple items efficiently with rate limiting and error handling
 - **Guided Workflows**: Built-in prompts for complex tasks like exporting device metrics
@@ -42,7 +42,7 @@ npm install -g logicmonitor-api-mcp
 
 ```bash
 # Clone the repository
-git clone https://github.com/stevevillardi/logicmonitor-api-mcp.git
+git clone https://github.com/LogicMonitor/logicmonitor-api-mcp.git
 cd logicmonitor-api-mcp
 
 # Install dependencies
@@ -102,11 +102,12 @@ HTTP mode allows remote access and is suitable for shared deployments:
 
 1. **Start the server:**
 ```bash
-# With environment variables
-LM_ACCOUNT=your-account LM_BEARER_TOKEN=your-bearer-token PORT=3000 logicmonitor-api-mcp
+# With environment variables (default port is 3000)
+LM_ACCOUNT=your-account LM_BEARER_TOKEN=your-bearer-token logicmonitor-api-mcp
 
 # Or use a .env file
-echo "PORT=3000" > .env
+cp .env.example .env
+# Edit .env with your credentials
 logicmonitor-api-mcp
 ```
 
@@ -269,8 +270,26 @@ Retrieve device monitoring data including datasources, instances, and time-serie
 Key features:
 - Wildcard filtering for datasources (e.g., `datasourceIncludeFilter: "CPU*"`)
 - Batch instance data retrieval (e.g., all CPU cores at once)
-- Flexible time ranges (ISO 8601 dates or Unix epochs, defaults to last 24 hours)
+- Flexible time ranges (relative strings like `-6h`/`-7d`, ISO 8601 dates, Unix epochs, or `"now"` — defaults to last 24 hours)
 - Formatted output with timestamps and metric values
+
+#### `lm_sdt`
+Manage Scheduled Down Times (maintenance windows):
+- **list** - List SDTs with filtering (e.g., `isEffective:true` for active SDTs)
+- **get** - Get SDT details by ID (string format, e.g., `"R_42"`)
+- **create** - Create one-time or recurring SDTs targeting devices, groups, websites, collectors, or datasources
+- **update** - Update SDT schedule, comment, or target
+- **delete** - Delete/end SDTs (single or batch)
+
+SDT types: ResourceSDT (device), ResourceGroupSDT, WebsiteSDT, WebsiteGroupSDT, CollectorSDT, DeviceDataSourceSDT, and more.
+
+#### `lm_opsnote`
+Manage operational notes for change tracking:
+- **list** - List ops notes with filtering (by tags, createdBy, happenedOn, etc.)
+- **get** - Get note details by ID
+- **create** - Create notes with optional scopes (device, service, deviceGroup, serviceGroup) and tags
+- **update** - Update note text, scopes, or tags
+- **delete** - Delete notes (single or batch)
 
 #### `lm_session`
 Manage session context and variables using standard CRUD operations:
@@ -279,7 +298,7 @@ Manage session context and variables using standard CRUD operations:
 - **list** - Get session history (recent tool calls)
   - Parameters: `limit` (optional, 1-50)
 - **get** - Get session context or specific variable
-  - Parameters: `key` (optional - if omitted, returns full context), `historyLimit`, `includeResults`
+  - Parameters: `key` (optional - if omitted, returns full context), `fields` (project specific fields from arrays), `index` (single item by position), `limit` (first N items), `historyLimit`, `includeResults`
 - **create** - Store a new session variable
   - Parameters: `key` (required), `value` (required)
   - Use for storing results for batch operations with applyToPrevious
@@ -328,6 +347,26 @@ A comprehensive workflow that guides you through exporting monitoring data from 
 ```
 
 The prompt will guide the AI through each step, ensuring proper data collection and formatting.
+
+### `batch-device-update`
+A guided workflow for finding devices by filter, reviewing them, and applying updates in bulk.
+
+**Arguments:**
+- `device_filter` (required) - Filter to select devices (e.g., `"displayName:*prod*"`, `"hostStatus:dead"`)
+- `update_description` (required) - Description of what to update (e.g., `"disable alerting"`, `"add custom property env=production"`)
+
+**Workflow Steps:**
+1. List devices matching the filter
+2. Review matched devices for confirmation
+3. Apply batch update via `applyToPrevious`
+4. Verify results
+
+### `alert-triage`
+A guided workflow for listing, filtering, and triaging LogicMonitor alerts.
+
+**Arguments:**
+- `severity_filter` (optional) - Alert severity to focus on: `"critical"`, `"error"`, `"warning"`, or `"all"` (default)
+- `resource_filter` (optional) - Filter to scope alerts to specific resources (e.g., `"monitorObjectName:*prod*"`)
 
 ## Key Features
 
@@ -444,6 +483,7 @@ npm run dev
 
 # Build
 npm run build
+```
 
 ### Debug Mode
 
@@ -458,7 +498,7 @@ LOG_LEVEL=debug logicmonitor-api-mcp
 - **Session Management**: Stateful connections with cleanup
 - **Rate Limiting**: Automatic retry with exponential backoff
 - **Batch Processing**: Concurrent operations with partial failure handling
-- **Input Validation**: Joi schemas ensure data integrity
+- **Input Validation**: Zod schemas ensure data integrity
 
 ## Contributing
 

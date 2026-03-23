@@ -1,0 +1,333 @@
+[
+  {
+    "id": "device-list-basic",
+    "description": "List all devices with no filters",
+    "category": "operation-selection",
+    "tags": ["device", "list"],
+    "steps": [
+      {
+        "userPrompt": "Show me all the devices in our LogicMonitor account.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "absent": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-list-displayname-filter",
+    "description": "List devices filtered by display name wildcard",
+    "category": "parameter-extraction",
+    "tags": ["device", "list", "filter"],
+    "steps": [
+      {
+        "userPrompt": "Find all devices whose name contains 'prod' in it.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "displayName" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-list-hoststatus-filter",
+    "description": "List devices filtered by host status (dead/down devices)",
+    "category": "parameter-extraction",
+    "tags": ["device", "list", "filter"],
+    "steps": [
+      {
+        "userPrompt": "Which devices are currently showing as dead or down?",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "hostStatus" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-list-field-selection",
+    "description": "List devices returning only specific fields",
+    "category": "parameter-extraction",
+    "tags": ["device", "list", "fields"],
+    "steps": [
+      {
+        "userPrompt": "I just need a quick list of device IDs and display names, nothing else.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "fields": { "contains": "displayName" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-list-pagination",
+    "description": "List devices with explicit page size and offset",
+    "category": "parameter-extraction",
+    "tags": ["device", "list", "pagination"],
+    "steps": [
+      {
+        "userPrompt": "Get me the second page of devices, 25 per page.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "size": { "exact": 25 },
+              "offset": { "exact": 25 }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-list-autopaginate",
+    "description": "List all devices using auto-pagination",
+    "category": "parameter-extraction",
+    "tags": ["device", "list", "pagination"],
+    "steps": [
+      {
+        "userPrompt": "I need the complete list of every single device - make sure you grab all pages.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "autoPaginate": { "exact": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-get-by-id",
+    "description": "Get a single device by its numeric ID, using 'id' not 'deviceId'",
+    "category": "parameter-extraction",
+    "tags": ["device", "get"],
+    "steps": [
+      {
+        "userPrompt": "Pull up the details for device 4217.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "get",
+              "id": { "exact": 4217 },
+              "deviceId": { "absent": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-get-with-fields",
+    "description": "Get a device by ID with specific field selection",
+    "category": "parameter-extraction",
+    "tags": ["device", "get", "fields"],
+    "steps": [
+      {
+        "userPrompt": "For device 891, just show me the display name and the custom properties.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "get",
+              "id": { "exact": 891 },
+              "fields": { "present": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-create-single",
+    "description": "Create a single device with all required fields using correct parameter names",
+    "category": "parameter-extraction",
+    "tags": ["device", "create"],
+    "steps": [
+      {
+        "userPrompt": "Add a new server to monitoring. The display name should be 'web-prod-03', the hostname is 10.0.1.55, put it in group 12, and use collector 7.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "create",
+              "displayName": { "exact": "web-prod-03" },
+              "name": { "exact": "10.0.1.55" },
+              "hostGroupIds": { "exact": [12] },
+              "preferredCollectorId": { "exact": 7 }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-create-correct-field-names",
+    "description": "Verify the LLM uses the correct field names (displayName not display_name, hostGroupIds not groupIds, etc.)",
+    "category": "edge-case",
+    "tags": ["device", "create", "field-names"],
+    "steps": [
+      {
+        "userPrompt": "Create a device called 'db-replica-east' at address db-east.internal.corp, assign it to groups 5 and 8, monitored by collector 14, and turn off alerting for now.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "create",
+              "displayName": { "exact": "db-replica-east" },
+              "name": { "exact": "db-east.internal.corp" },
+              "hostGroupIds": { "exact": [5, 8] },
+              "preferredCollectorId": { "exact": 14 },
+              "disableAlerting": { "exact": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-update-single",
+    "description": "Update a device by ID, changing its display name",
+    "category": "parameter-extraction",
+    "tags": ["device", "update"],
+    "steps": [
+      {
+        "userPrompt": "Rename device 305 to 'app-server-primary'.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "update",
+              "id": { "exact": 305 },
+              "displayName": { "exact": "app-server-primary" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-update-custom-properties",
+    "description": "Update a device's custom properties",
+    "category": "parameter-extraction",
+    "tags": ["device", "update", "properties"],
+    "steps": [
+      {
+        "userPrompt": "On device 1042, set custom properties: environment=staging and team=platform-eng.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "update",
+              "id": { "exact": 1042 },
+              "customProperties": {
+                "exact": [
+                  { "name": "environment", "value": "staging" },
+                  { "name": "team", "value": "platform-eng" }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-delete-single",
+    "description": "Delete a single device by ID",
+    "category": "operation-selection",
+    "tags": ["device", "delete"],
+    "steps": [
+      {
+        "userPrompt": "Remove device 776 from monitoring entirely.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "delete",
+              "id": { "exact": 776 }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-delete-multiple",
+    "description": "Delete multiple devices by providing an array of IDs",
+    "category": "parameter-extraction",
+    "tags": ["device", "delete", "batch"],
+    "steps": [
+      {
+        "userPrompt": "Decommission devices 101, 102, and 103 — delete all three.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "delete",
+              "ids": { "exact": [101, 102, 103] }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-batch-update-apply-to-previous",
+    "description": "Batch update using applyToPrevious to target devices from a prior list result",
+    "category": "multi-step",
+    "tags": ["device", "update", "batch", "session"],
+    "steps": [
+      {
+        "userPrompt": "List all the devices in the staging environment.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "present": true }
+            }
+          }
+        ],
+        "syntheticResult": "Found 9 devices matching filter. Results stored in session variable 'lastDeviceListIds'."
+      },
+      {
+        "userPrompt": "Great, now disable alerting on all of those devices you just found.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "update",
+              "applyToPrevious": { "contains": "lastDeviceListIds" },
+              "disableAlerting": { "exact": true }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

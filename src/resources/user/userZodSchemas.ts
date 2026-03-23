@@ -8,87 +8,87 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 // Common schemas
 const roleSchema = z.object({
-  id: z.number()
+  id: z.number().describe('Role ID to assign to the user')
 });
 
 const batchOptionsSchema = z.object({
-  maxConcurrent: z.number().min(1).max(50).optional(),
-  continueOnError: z.boolean().optional(),
-  dryRun: z.boolean().optional()
-}).optional();
+  maxConcurrent: z.number().min(1).max(50).optional().describe('Max parallel API requests (default 5)'),
+  continueOnError: z.boolean().optional().describe('If true, continue processing remaining items when one fails'),
+  dryRun: z.boolean().optional().describe('If true, validate inputs without executing the operation')
+}).optional().describe('Options for controlling batch operation behavior');
 
-// Single user create schema
+// Single user create schema — .loose() allows additional LM API fields not explicitly listed
 const singleUserSchema = z.object({
-  username: z.string(),
-  email: z.string().email(),
-  firstName: z.string(),
-  lastName: z.string(),
-  roles: z.array(roleSchema).min(1),
-  password: z.string().optional(),
-  phone: z.string().optional(),
-  smsEmail: z.string().optional(),
-  status: z.string().optional(),
-  timezone: z.string().optional(),
-  note: z.string().optional(),
-  apionly: z.boolean().optional(),
-  forcePasswordChange: z.boolean().optional(),
-  contactMethod: z.string().optional()
+  username: z.string().describe('Login username for the user'),
+  email: z.string().email().describe('Email address for the user'),
+  firstName: z.string().describe('First name of the user'),
+  lastName: z.string().describe('Last name of the user'),
+  roles: z.array(roleSchema).min(1).describe('Array of role objects (at least one required), e.g. [{"id": 1}]'),
+  password: z.string().optional().describe('Password for the user account'),
+  phone: z.string().optional().describe('Phone number for the user'),
+  smsEmail: z.string().optional().describe('SMS email address for notifications'),
+  status: z.string().optional().describe('User account status, e.g. "active" or "suspended"'),
+  timezone: z.string().optional().describe('Timezone for the user, e.g. "America/New_York"'),
+  note: z.string().optional().describe('Freeform note about the user'),
+  apionly: z.boolean().optional().describe('If true, user can only access the API (no portal UI access)'),
+  forcePasswordChange: z.boolean().optional().describe('If true, user must change password on next login'),
+  contactMethod: z.string().optional().describe('Preferred contact method, e.g. "email" or "smsEmail"')
 }).loose();
 
-// Single user update schema
+// Single user update schema — .loose() allows additional LM API fields not explicitly listed
 const singleUpdateUserSchema = z.object({
-  userId: z.number().optional(),
-  id: z.number().optional(),
-  username: z.string().optional(),
-  email: z.string().email().optional(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  roles: z.array(roleSchema).optional(),
-  phone: z.string().optional(),
-  smsEmail: z.string().optional(),
-  timezone: z.string().optional(),
-  note: z.string().optional(),
-  status: z.string().optional(),
-  forcePasswordChange: z.boolean().optional(),
-  contactMethod: z.string().optional()
+  userId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  id: z.number().optional().describe('User ID (preferred). Alias: userId'),
+  username: z.string().optional().describe('Login username for the user'),
+  email: z.string().email().optional().describe('Email address for the user'),
+  firstName: z.string().optional().describe('First name of the user'),
+  lastName: z.string().optional().describe('Last name of the user'),
+  roles: z.array(roleSchema).optional().describe('Array of role objects, e.g. [{"id": 1}]'),
+  phone: z.string().optional().describe('Phone number for the user'),
+  smsEmail: z.string().optional().describe('SMS email address for notifications'),
+  timezone: z.string().optional().describe('Timezone for the user, e.g. "America/New_York"'),
+  note: z.string().optional().describe('Freeform note about the user'),
+  status: z.string().optional().describe('User account status, e.g. "active" or "suspended"'),
+  forcePasswordChange: z.boolean().optional().describe('If true, user must change password on next login'),
+  contactMethod: z.string().optional().describe('Preferred contact method, e.g. "email" or "smsEmail"')
 }).loose();
 
-// List operation schema
+// List operation schema — .strict() rejects unknown parameters
 export const UserListArgsSchema = z.object({
-  operation: z.literal('list'),
-  filter: z.string().optional(),
-  size: z.number().min(1).max(1000).optional(),
-  offset: z.number().min(0).optional(),
-  fields: z.string().optional(),
-  autoPaginate: z.boolean().optional()
+  operation: z.literal('list').describe('The operation to perform'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/user for valid field names.'),
+  size: z.number().min(1).max(1000).optional().describe('Items per page (default 50, max 1000)'),
+  offset: z.number().min(0).optional().describe('Number of items to skip for pagination (default 0)'),
+  fields: z.string().optional().describe('Comma-separated list of fields to return, e.g. "id,displayName"'),
+  autoPaginate: z.boolean().optional().describe('When true, automatically fetches all pages. Use cautiously on large result sets.')
 }).strict();
 
-// Get operation schema
+// Get operation schema — .strict() rejects unknown parameters
 export const UserGetArgsSchema = z.object({
-  operation: z.literal('get'),
-  id: z.number().optional(),
-  userId: z.number().optional(),
-  fields: z.string().optional()
+  operation: z.literal('get').describe('The operation to perform'),
+  id: z.number().optional().describe('User ID (preferred). Alias: userId'),
+  userId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  fields: z.string().optional().describe('Comma-separated list of fields to return, e.g. "id,displayName"')
 }).strict();
 
-// Create operation schema
+// Create operation schema — .strict() rejects unknown parameters
 export const UserCreateArgsSchema = z.object({
-  operation: z.literal('create'),
-  username: z.string().optional(),
-  email: z.string().email().optional(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  roles: z.array(roleSchema).optional(),
-  password: z.string().optional(),
-  phone: z.string().optional(),
-  smsEmail: z.string().optional(),
-  status: z.string().optional(),
-  timezone: z.string().optional(),
-  note: z.string().optional(),
-  apionly: z.boolean().optional(),
-  forcePasswordChange: z.boolean().optional(),
-  contactMethod: z.string().optional(),
-  users: z.array(singleUserSchema).optional(),
+  operation: z.literal('create').describe('The operation to perform'),
+  username: z.string().optional().describe('Login username for the user (required for single create)'),
+  email: z.string().email().optional().describe('Email address for the user (required for single create)'),
+  firstName: z.string().optional().describe('First name of the user (required for single create)'),
+  lastName: z.string().optional().describe('Last name of the user (required for single create)'),
+  roles: z.array(roleSchema).optional().describe('Array of role objects (required for single create), e.g. [{"id": 1}]'),
+  password: z.string().optional().describe('Password for the user account'),
+  phone: z.string().optional().describe('Phone number for the user'),
+  smsEmail: z.string().optional().describe('SMS email address for notifications'),
+  status: z.string().optional().describe('User account status, e.g. "active" or "suspended"'),
+  timezone: z.string().optional().describe('Timezone for the user, e.g. "America/New_York"'),
+  note: z.string().optional().describe('Freeform note about the user'),
+  apionly: z.boolean().optional().describe('If true, user can only access the API (no portal UI access)'),
+  forcePasswordChange: z.boolean().optional().describe('If true, user must change password on next login'),
+  contactMethod: z.string().optional().describe('Preferred contact method, e.g. "email" or "smsEmail"'),
+  users: z.array(singleUserSchema).optional().describe('Array of user objects for batch creation'),
   batchOptions: batchOptionsSchema
 }).strict()
 .superRefine((data, ctx) => {
@@ -132,41 +132,41 @@ export const UserCreateArgsSchema = z.object({
   }
 });
 
-// Update operation schema
+// Update operation schema — .strict() rejects unknown parameters
 export const UserUpdateArgsSchema = z.object({
-  operation: z.literal('update'),
-  id: z.number().optional(),
-  userId: z.number().optional(),
-  username: z.string().optional(),
-  email: z.string().email().optional(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-  roles: z.array(roleSchema).optional(),
-  phone: z.string().optional(),
-  smsEmail: z.string().optional(),
-  timezone: z.string().optional(),
-  note: z.string().optional(),
-  status: z.string().optional(),
-  forcePasswordChange: z.boolean().optional(),
-  contactMethod: z.string().optional(),
-  users: z.array(singleUpdateUserSchema).optional(),
-  updates: z.record(z.string(), z.any()).optional(),
-  applyToPrevious: z.string().optional(),
-  filter: z.string().optional(),
+  operation: z.literal('update').describe('The operation to perform'),
+  id: z.number().optional().describe('User ID (preferred). Alias: userId'),
+  userId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  username: z.string().optional().describe('Login username for the user'),
+  email: z.string().email().optional().describe('Email address for the user'),
+  firstName: z.string().optional().describe('First name of the user'),
+  lastName: z.string().optional().describe('Last name of the user'),
+  roles: z.array(roleSchema).optional().describe('Array of role objects, e.g. [{"id": 1}]'),
+  phone: z.string().optional().describe('Phone number for the user'),
+  smsEmail: z.string().optional().describe('SMS email address for notifications'),
+  timezone: z.string().optional().describe('Timezone for the user, e.g. "America/New_York"'),
+  note: z.string().optional().describe('Freeform note about the user'),
+  status: z.string().optional().describe('User account status, e.g. "active" or "suspended"'),
+  forcePasswordChange: z.boolean().optional().describe('If true, user must change password on next login'),
+  contactMethod: z.string().optional().describe('Preferred contact method, e.g. "email" or "smsEmail"'),
+  users: z.array(singleUpdateUserSchema).optional().describe('Array of user objects for batch update'),
+  updates: z.record(z.string(), z.unknown()).optional().describe('Key-value pairs of fields to update across all targeted users'),
+  applyToPrevious: z.string().optional().describe('Session variable name containing IDs from a prior list, e.g. "lastDeviceListIds". Use lm_session list to see available variables.'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/user for valid field names.'),
   batchOptions: batchOptionsSchema
 }).strict();
 
-// Delete operation schema
+// Delete operation schema — .strict() rejects unknown parameters
 export const UserDeleteArgsSchema = z.object({
-  operation: z.literal('delete'),
-  id: z.number().optional(),
-  userId: z.number().optional(),
-  ids: z.array(z.number()).optional(),
+  operation: z.literal('delete').describe('The operation to perform'),
+  id: z.number().optional().describe('User ID (preferred). Alias: userId'),
+  userId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  ids: z.array(z.number()).optional().describe('Array of user IDs to delete in batch'),
   users: z.array(z.object({
-    id: z.number()
-  }).loose()).optional(),
-  applyToPrevious: z.string().optional(),
-  filter: z.string().optional(),
+    id: z.number().describe('User ID to delete')
+  }).loose()).optional().describe('Array of user objects for batch deletion'),
+  applyToPrevious: z.string().optional().describe('Session variable name containing IDs from a prior list, e.g. "lastDeviceListIds". Use lm_session list to see available variables.'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/user for valid field names.'),
   batchOptions: batchOptionsSchema
 }).strict();
 
@@ -242,4 +242,3 @@ export function validateDeleteUser(args: unknown) {
   }
   return result.data;
 }
-

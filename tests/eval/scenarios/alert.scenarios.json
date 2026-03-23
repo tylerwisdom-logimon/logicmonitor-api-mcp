@@ -1,0 +1,167 @@
+[
+  {
+    "id": "alert-list-all",
+    "description": "List all alerts — model may optionally add a filter which is acceptable",
+    "category": "operation-selection",
+    "tags": ["alert", "list"],
+    "steps": [
+      {
+        "userPrompt": "What alerts are currently firing in our environment?",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alert-list-critical",
+    "description": "List only critical severity alerts (severity 4)",
+    "category": "parameter-extraction",
+    "tags": ["alert", "list", "filter", "severity"],
+    "steps": [
+      {
+        "userPrompt": "Show me just the critical alerts right now.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "list",
+              "filter": { "pattern": "severity[>:=]*4" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alert-list-resource-filter",
+    "description": "List alerts filtered to a specific resource or device name",
+    "category": "parameter-extraction",
+    "tags": ["alert", "list", "filter"],
+    "steps": [
+      {
+        "userPrompt": "Are there any active alerts on the server called web-prod-01?",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "web-prod-01" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alert-get-by-id",
+    "description": "Get a specific alert by its ID",
+    "category": "parameter-extraction",
+    "tags": ["alert", "get"],
+    "steps": [
+      {
+        "userPrompt": "Give me the full details on alert DS91442307.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "get",
+              "id": { "exact": "DS91442307" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alert-ack",
+    "description": "Acknowledge an alert with a comment",
+    "category": "parameter-extraction",
+    "tags": ["alert", "update", "ack"],
+    "steps": [
+      {
+        "userPrompt": "Acknowledge alert DS55001234 and note that the on-call engineer is looking into it.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "update",
+              "action": "ack",
+              "id": { "exact": "DS55001234" },
+              "ackComment": { "present": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alert-add-note",
+    "description": "Add a note to an existing alert",
+    "category": "parameter-extraction",
+    "tags": ["alert", "update", "note"],
+    "steps": [
+      {
+        "userPrompt": "Add a note to alert DS77008899 saying 'Root cause identified: disk full on /var/log partition.'",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "update",
+              "action": "note",
+              "id": { "exact": "DS77008899" },
+              "note": { "contains": "disk full" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alert-escalate",
+    "description": "Escalate an alert to the next stage",
+    "category": "operation-selection",
+    "tags": ["alert", "update", "escalate"],
+    "steps": [
+      {
+        "userPrompt": "This alert DS33006677 needs to go up the chain — please escalate it.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "update",
+              "action": "escalate",
+              "id": { "exact": "DS33006677" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "alert-list-fields-and-sorting",
+    "description": "List alerts with specific fields and sorted by severity descending",
+    "category": "parameter-extraction",
+    "tags": ["alert", "list", "fields", "sort"],
+    "steps": [
+      {
+        "userPrompt": "Get me a list of alerts showing just the ID, severity, and resource name, sorted by most severe first.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "list",
+              "fields": { "present": true },
+              "sort": { "contains": "severity" }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -18,6 +18,9 @@ export interface BatchResolutionResult<T> {
   requiresConfirmation: boolean;
 }
 
+/** Maximum number of items allowed in a filter-based batch operation */
+const MAX_FILTER_BATCH_SIZE = 5000;
+
 export class BatchOperationResolver {
   /**
    * Resolve items for batch operation from various input patterns
@@ -84,9 +87,13 @@ export class BatchOperationResolver {
     const value = sessionContext.variables[reference];
 
     if (!value) {
+      const available = Object.keys(sessionContext.variables);
+      const availableStr = available.length > 0
+        ? `Available variables: ${available.join(', ')}.`
+        : 'No session variables are currently stored. Run a list operation first to populate session variables.';
       throw new McpError(
         ErrorCode.InvalidParams,
-        `Session variable '${reference}' not found. Available: ${Object.keys(sessionContext.variables).join(', ')}`
+        `Session variable "${reference}" not found. ${availableStr} Use lm_session list to see all variables.`
       );
     }
 
@@ -110,65 +117,40 @@ export class BatchOperationResolver {
   /**
    * Resolve items by querying with filter
    */
+  /** Map resource types to their list methods on the client */
+  private static getListMethod(
+    client: LogicMonitorClient,
+    resourceType: ResourceType
+  ): ((opts: { filter: string; size: number; autoPaginate: boolean }) => Promise<{ items: unknown[] }>) | null {
+    const listMethods: Partial<Record<ResourceType, (opts: { filter: string; size: number; autoPaginate: boolean }) => Promise<{ items: unknown[] }>>> = {
+      device: (opts) => client.listDevices(opts),
+      deviceGroup: (opts) => client.listDeviceGroups(opts),
+      website: (opts) => client.listWebsites(opts),
+      websiteGroup: (opts) => client.listWebsiteGroups(opts),
+      collector: (opts) => client.listCollectors(opts),
+      alert: (opts) => client.listAlerts(opts),
+      user: (opts) => client.listUsers(opts),
+      dashboard: (opts) => client.listDashboards(opts),
+      collectorGroup: (opts) => client.listCollectorGroups(opts),
+    };
+    return listMethods[resourceType] ?? null;
+  }
+
   private static async resolveFromFilter<T>(
     filter: string,
     client: LogicMonitorClient,
     resourceType: ResourceType
   ): Promise<T[]> {
-    let items: T[] = [];
-
-    switch (resourceType) {
-      case 'device': {
-        const result = await client.listDevices({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'deviceGroup': {
-        const result = await client.listDeviceGroups({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'website': {
-        const result = await client.listWebsites({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'websiteGroup': {
-        const result = await client.listWebsiteGroups({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'collector': {
-        const result = await client.listCollectors({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'alert': {
-        const result = await client.listAlerts({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'user': {
-        const result = await client.listUsers({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'dashboard': {
-        const result = await client.listDashboards({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      case 'collectorGroup': {
-        const result = await client.listCollectorGroups({ filter, size: 1000 });
-        items = result.items as T[];
-        break;
-      }
-      default:
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Filter-based batch operations not supported for resource type: ${resourceType}`
-        );
+    const listMethod = this.getListMethod(client, resourceType);
+    if (!listMethod) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Filter-based batch operations not supported for resource type: ${resourceType}`
+      );
     }
+
+    const result = await listMethod({ filter, size: 1000, autoPaginate: true });
+    const items = result.items as T[];
 
     if (items.length === 0) {
       throw new McpError(
@@ -177,26 +159,36 @@ export class BatchOperationResolver {
       );
     }
 
+    if (items.length > MAX_FILTER_BATCH_SIZE) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Filter matched ${items.length} items, exceeding the safety limit of ${MAX_FILTER_BATCH_SIZE}. Narrow your filter to reduce the batch size.`
+      );
+    }
+
     return items;
   }
 
   /**
-   * Extract batch options from args
+   * Extract batch options from args.
+   * Accepts Record<string, unknown> so Zod-validated output can be passed directly.
    */
-  static extractBatchOptions(args: UpdateOperationArgs | DeleteOperationArgs): BatchOptions {
+  static extractBatchOptions(args: Record<string, unknown>): BatchOptions {
+    const batchOptions = args.batchOptions as Record<string, unknown> | undefined;
     return {
-      maxConcurrent: args.batchOptions?.maxConcurrent ?? 5,
-      continueOnError: args.batchOptions?.continueOnError ?? true,
-      dryRun: args.batchOptions?.dryRun ?? false
+      maxConcurrent: (batchOptions?.maxConcurrent as number) ?? 5,
+      continueOnError: (batchOptions?.continueOnError as boolean) ?? true,
+      dryRun: (batchOptions?.dryRun as boolean) ?? false
     };
   }
 
   /**
-   * Check if operation is a batch operation
+   * Check if operation is a batch operation.
+   * Accepts Record<string, unknown> so Zod-validated output can be passed directly.
    */
-  static isBatchOperation(args: UpdateOperationArgs | DeleteOperationArgs, itemsKey: string = 'items'): boolean {
+  static isBatchOperation(args: Record<string, unknown>, itemsKey: string = 'items'): boolean {
     return !!(
-      (args[itemsKey] && Array.isArray(args[itemsKey]) && (args[itemsKey] as unknown[]).length > 1) ||
+      (args[itemsKey] && Array.isArray(args[itemsKey]) && (args[itemsKey] as unknown[]).length >= 1) ||
       args.applyToPrevious ||
       args.filter
     );

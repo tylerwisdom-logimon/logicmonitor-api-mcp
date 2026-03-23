@@ -1,3 +1,97 @@
+# LogicMonitor MCP Server v2.1.0
+
+## New Resources, Smarter Responses, and LLM Eval System
+
+Version 2.1 adds new resource coverage (SDT and OpsNotes), significantly reduces token usage through intelligent response formatting, and introduces an automated LLM evaluation harness for testing tool accuracy.
+
+## Highlights
+
+### New Resources
+
+- **SDT (Scheduled Down Time)** – Full CRUD management of maintenance windows via `lm_sdt`. Create one-time or recurring SDTs targeting devices, device groups, websites, collectors, and datasources. Supports all schedule types: oneTime, daily, weekly, monthly, monthlyByWeek.
+
+- **OpsNotes** – Full CRUD management of operational notes via `lm_opsnote`. Document deployments, incidents, and changes with scoped visibility (device, service, deviceGroup, serviceGroup) and tag-based categorization.
+
+### Intelligent Response Formatting (Token Reduction)
+
+Tool responses now adapt based on result size and operation type, dramatically reducing token usage for large result sets:
+
+- **Compact list views** – Lists with more than 5 items return a key-field summary table instead of full JSON. Full details remain accessible via `lm_session get` with field projection.
+- **Time-series data optimization** – Device data responses include summary statistics (min/max/avg/latest per metric) plus sampled data points instead of returning every row.
+- **Batch result summaries** – Large batch operations return only failure details, with full per-item results stored in session.
+- **Internal field stripping** – `raw`, `meta`, and `request` fields are removed from tool responses to reduce noise.
+
+### Session Filtering Enhancements
+
+The `lm_session get` operation now supports on-demand filtering to retrieve exactly what's needed from stored results:
+
+- **`fields`** – Comma-separated field projection (e.g., `fields: "id,displayName,hostStatus"`)
+- **`index`** – Return a single item by position from array variables
+- **`limit`** – Return only the first N items
+
+This pairs with compact responses — LLMs can list resources (compact table), then retrieve full details for specific items via session without re-querying the API.
+
+### Improved Error Messages
+
+API errors now flow through the full LogicMonitor error response including `errorMessage`, `errorCode`, and `errorDetail`. Status-based hints (404: verify IDs, 401/403: check permissions, 429: rate limited) help LLMs recover from failures.
+
+### Device Data Reliability
+
+- **Relative time parsing** – Time parameters now support `-6h`, `-24h`, `-7d`, `-30m`, `"now"`, ISO dates, and epoch seconds. Previously, relative strings like `-6h` silently failed.
+- **Datasource ID disambiguation** – Tool descriptions now clearly distinguish between the `id` field (used for subsequent API calls) and the `dataSourceId` field (the global datasource identifier).
+
+### Schema Flattening for MCP Clients
+
+Fixed a compatibility issue where Zod v4's `oneOf` discriminated unions were not recognized by MCP clients (tools appeared with no parameters). The server now handles both `anyOf` and `oneOf` formats, and the ListTools handler correctly flattens discriminated unions so all parameters are visible.
+
+### LLM Evaluation Harness
+
+A new automated eval system (`tests/eval/`) tests how accurately LLMs interpret the MCP server's tool schemas:
+
+- **Multi-provider support** – Currently supports OpenAI models (GPT-4o, GPT-5.4) via function calling
+- **Scenario-based testing** – 60+ scenarios across 8 categories: device, alert, device-data, SDT, OpsNote, general tool selection, multi-step conversations, and multi-tool workflows
+- **Scoring engine** – Evaluates tool selection accuracy, operation correctness, and parameter mapping with argument matchers (exact, contains, pattern, present, absent, oneOf, type)
+- **Multi-step workflow testing** – Scenarios with synthetic results that test conversation context across 3-4 step workflows
+- **CLI and Jest integration** – Run via `npm run eval` or `npm test -- tests/eval/`
+
+### Audit Logging & Security
+
+- **Structured audit logging** – Server events, auth successes/failures, session lifecycle, and tool calls are logged with clientId, authMode, IP, and requestId.
+- **Bearer token security** – Tokens hashed with SHA-256 for defense-in-depth.
+- **Graceful shutdown** – Clean session closure and transport cleanup on SIGTERM/SIGINT with configurable timeouts.
+
+### Winston Transport Leak Fix
+
+Fixed a memory leak in HTTP mode where each new session added a Winston logging transport that was never removed on session close. After 11+ sessions, Node.js would emit `MaxListenersExceededWarning`. Transports are now properly cleaned up on session close and eviction.
+
+## Complete Tool List
+
+All 13 tools:
+
+1. **lm_device** – Device management with custom properties and host groups
+2. **lm_device_group** – Device group hierarchy and dynamic membership
+3. **lm_device_data** – Performance metrics, datasources, and instances
+4. **lm_alert** – Alert management (list, get, update for ack/note/escalate)
+5. **lm_collector** – Collector discovery and monitoring
+6. **lm_collector_group** – Collector group organization
+7. **lm_website** – Website monitoring (webcheck/pingcheck)
+8. **lm_website_group** – Website group management
+9. **lm_dashboard** – Dashboard creation and management
+10. **lm_user** – User management with role assignments
+11. **lm_sdt** – Scheduled Down Time management (new)
+12. **lm_opsnote** – Operational notes and change tracking (new)
+13. **lm_session** – Session state, variables, and operation history
+
+## Upgrading from v2.0
+
+No breaking changes. The new tools and response formatting are additive. Existing tool calls continue to work unchanged. The only observable difference is that large list responses now return compact tables instead of full JSON — use `lm_session get` with `fields`/`index`/`limit` to retrieve full details when needed.
+
+---
+
+**Full Changelog**: See [CHANGELOG.md](CHANGELOG.md) for detailed changes.
+
+---
+
 # LogicMonitor MCP Server v2.0.0
 
 ## Major Release - Complete Architecture Modernization
@@ -50,7 +144,7 @@ Version 2.0 represents a complete rewrite of the LogicMonitor MCP Server with mo
 
 - **Session Management** – Enhanced session tool for storing variables, inspecting history, and maintaining context across multi-step workflows.
 
-## Complete Tool List
+## Complete Tool List (v2.0)
 
 All 11 tools now support the unified resource pattern:
 
@@ -76,9 +170,7 @@ All 11 tools now support the unified resource pattern:
 
 - **Custom Properties** – Update operations now use `opType=replace` to merge custom properties instead of overwriting them.
 
-## 📚 Migration Guide
-
-### From v1.x to v2.0
+## Migration Guide (v1.x to v2.0)
 
 **Before (v1.x):**
 ```javascript
@@ -90,13 +182,13 @@ await callTool('lm_create_device', { displayName: 'server1', ... })
 **After (v2.0):**
 ```javascript
 // Unified tool with operation parameter
-await callTool('lm_device', { 
-  operation: 'list', 
-  filter: 'hostStatus:alive' 
+await callTool('lm_device', {
+  operation: 'list',
+  filter: 'hostStatus:alive'
 })
-await callTool('lm_device', { 
-  operation: 'create', 
-  displayName: 'server1', 
+await callTool('lm_device', {
+  operation: 'create',
+  displayName: 'server1',
   ...
 })
 ```

@@ -6,7 +6,6 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { ResourceHandler } from '../base/resourceHandler.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import type { LMCollector } from '../../types/logicmonitor.js';
 import type {
   ListOperationArgs,
@@ -31,11 +30,7 @@ export class CollectorHandler extends ResourceHandler<LMCollector> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMCollector>> {
     const validated = validateListCollectors(args);
     const { fields, filter, size, offset, autoPaginate } = validated;
-    const fieldConfig = sanitizeFields('collector', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown collector field(s): ${fieldConfig.invalid.join(', ')}`);
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listCollectors({
       fields: fieldConfig.fieldsParam,
@@ -53,8 +48,7 @@ export class CollectorHandler extends ResourceHandler<LMCollector> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'collector', 'list', result);
+    this.recordAndStore('list', result);
     return result;
   }
 
@@ -74,4 +68,3 @@ export class CollectorHandler extends ResourceHandler<LMCollector> {
     throw new McpError(ErrorCode.InvalidRequest, 'Collector deletion not supported via API');
   }
 }
-

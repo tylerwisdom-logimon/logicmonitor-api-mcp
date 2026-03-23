@@ -44,9 +44,12 @@ export class GracefulShutdown {
           }
         });
 
-        // Force close after timeout
+        // Force close after timeout - actually close all connections
         setTimeout(() => {
           this.logger.warn(`Force closing ${name} server after timeout`);
+          if ('closeAllConnections' in server && typeof server.closeAllConnections === 'function') {
+            server.closeAllConnections();
+          }
           resolve();
         }, 10000); // 10 second timeout
       });
@@ -83,8 +86,17 @@ export class GracefulShutdown {
   setupSignalHandlers(): void {
     const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT', 'SIGHUP'];
 
+    const FORCE_EXIT_TIMEOUT_MS = 15000;
+
     for (const signal of signals) {
       process.on(signal, () => {
+        // Hard timeout: force exit if graceful shutdown hangs
+        const forceTimer = setTimeout(() => {
+          this.logger.error(`Forced exit after ${FORCE_EXIT_TIMEOUT_MS}ms timeout`);
+          process.exit(1);
+        }, FORCE_EXIT_TIMEOUT_MS);
+        forceTimer.unref();
+
         this.shutdown(signal).then(() => {
           process.exit(0);
         }).catch((error) => {
@@ -97,6 +109,8 @@ export class GracefulShutdown {
     // Handle uncaught errors without exiting immediately
     process.on('uncaughtException', (error) => {
       this.logger.error('Uncaught exception:', error);
+      const forceTimer = setTimeout(() => process.exit(1), FORCE_EXIT_TIMEOUT_MS);
+      forceTimer.unref();
       this.shutdown('uncaughtException').then(() => {
         process.exit(1);
       });
@@ -104,6 +118,8 @@ export class GracefulShutdown {
 
     process.on('unhandledRejection', (reason) => {
       this.logger.error('Unhandled rejection:', reason);
+      const forceTimer = setTimeout(() => process.exit(1), FORCE_EXIT_TIMEOUT_MS);
+      forceTimer.unref();
       this.shutdown('unhandledRejection').then(() => {
         process.exit(1);
       });

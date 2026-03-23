@@ -1,6 +1,6 @@
 export type SessionScope = 'variables' | 'history' | 'results' | 'all';
 
-export type ResourceType = 'device' | 'deviceGroup' | 'website' | 'websiteGroup' | 'collector' | 'alert' | 'user' | 'dashboard' | 'collectorGroup' | 'deviceData' | 'session';
+export type ResourceType = 'device' | 'deviceGroup' | 'website' | 'websiteGroup' | 'collector' | 'alert' | 'user' | 'dashboard' | 'collectorGroup' | 'deviceData' | 'session' | 'sdt' | 'opsnote';
 export type OperationType = 'list' | 'get' | 'create' | 'update' | 'delete' | 'list_datasources' | 'list_instances' | 'get_data';
 
 export interface SessionHistoryEntry {
@@ -28,6 +28,16 @@ export interface SessionContext {
 
 const DEFAULT_SESSION_ID = 'default';
 const MAX_HISTORY_ENTRIES = 50;
+const MAX_CACHE_ENTRIES_PER_TYPE = 100;
+
+/**
+ * In-memory session context manager.
+ *
+ * NOTE: Sessions are stored in process memory and will not survive restarts
+ * or work across multiple server instances. For horizontal scaling, this
+ * class should be replaced with a persistent store (e.g., Redis) behind
+ * a SessionStore interface. See MCP 2026 roadmap: "scalable session handling".
+ */
 
 function createEmptyContext(id: string): SessionContext {
   return {
@@ -183,19 +193,14 @@ export class SessionManager {
     if (!cache) {
       throw new Error(`Failed to get resource cache for type: ${resourceType}`);
     }
+    // Evict oldest entries when cache exceeds limit
+    if (cache.size >= MAX_CACHE_ENTRIES_PER_TYPE) {
+      const firstKey = cache.keys().next().value;
+      if (firstKey !== undefined) {
+        cache.delete(firstKey);
+      }
+    }
     cache.set(id, resource);
-  }
-
-  /**
-   * Get cached resource
-   */
-  getCachedResource(
-    sessionId: string | undefined,
-    resourceType: ResourceType,
-    id: number | string
-  ): unknown | undefined {
-    const context = this.getContext(sessionId);
-    return context.resourceCache.get(resourceType)?.get(id);
   }
 
   /**
@@ -261,7 +266,9 @@ export class SessionManager {
       dashboard: 'Dashboard',
       collectorGroup: 'CollectorGroup',
       deviceData: 'DeviceData',
-      session: 'Session'
+      session: 'Session',
+      sdt: 'Sdt',
+      opsnote: 'Opsnote'
     };
     return names[resourceType];
   }

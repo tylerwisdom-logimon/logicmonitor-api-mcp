@@ -8,7 +8,6 @@ import { ResourceHandler } from '../base/resourceHandler.js';
 import { BatchOperationResolver } from '../base/batchResolver.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import { throwBatchFailure } from '../../utils/batchUtils.js';
 import type { LMUser } from '../../types/logicmonitor.js';
 import type {
@@ -19,7 +18,7 @@ import type {
   DeleteOperationArgs,
   OperationResult
 } from '../../types/operations.js';
-import type { BatchResult, BatchItem } from '../../utils/batchProcessor.js';
+import type { BatchResult } from '../../utils/batchProcessor.js';
 import {
   validateListUsers,
   validateGetUser,
@@ -38,7 +37,8 @@ export class UserHandler extends ResourceHandler<LMUser> {
       {
         resourceType: 'user',
         resourceName: 'user',
-        idField: 'id'
+        idField: 'id',
+        pluralKey: 'users'
       },
       client,
       sessionManager,
@@ -49,14 +49,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMUser>> {
     const validated = validateListUsers(args);
     const { fields, filter, size, offset, autoPaginate } = validated;
-    const fieldConfig = sanitizeFields('user', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown user field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listUsers({
       fields: fieldConfig.fieldsParam,
@@ -80,8 +73,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'list', result);
+    this.recordAndStore('list', result);
 
     return result;
   }
@@ -89,20 +81,13 @@ export class UserHandler extends ResourceHandler<LMUser> {
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMUser>> {
     const validated = validateGetUser(args);
     const userId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof userId !== 'number') {
       throw new McpError(ErrorCode.InvalidParams, 'User ID must be a number');
     }
 
     const { fields } = validated;
-    const fieldConfig = sanitizeFields('user', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown user field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.getUser(userId, {
       fields: fieldConfig.fieldsParam
@@ -119,8 +104,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('get', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'get', result);
+    this.recordAndStore('get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'user', userId, apiResult.data);
 
     return result;
@@ -129,14 +113,12 @@ export class UserHandler extends ResourceHandler<LMUser> {
   protected async handleCreate(args: CreateOperationArgs): Promise<OperationResult<LMUser>> {
     const validated = validateCreateUser(args);
     const isBatch = this.isBatchCreate(validated);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const batchOptions = BatchOperationResolver.extractBatchOptions(validated as any);
+    const batchOptions = BatchOperationResolver.extractBatchOptions(validated);
     const usersInput = this.normalizeCreateInput(validated);
 
     const batchResult = await this.processBatch(
       usersInput,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (userPayload) => this.client.createUser(userPayload as any),
+      async (userPayload) => this.client.createUser(userPayload as Parameters<LogicMonitorClient['createUser']>[0]),
       {
         maxConcurrent: batchOptions.maxConcurrent || 5,
         continueOnError: batchOptions.continueOnError ?? true,
@@ -152,7 +134,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
         throwBatchFailure('User create', batchResult.results[0]);
       }
       const createdUser = entry.data as LMUser;
-      
+
       const result: OperationResult<LMUser> = {
         success: true,
         data: createdUser,
@@ -160,17 +142,13 @@ export class UserHandler extends ResourceHandler<LMUser> {
         meta: entry.meta ?? undefined
       };
 
-      this.storeInSession('create', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'create', result);
+      this.recordAndStore('create', result);
       this.sessionManager.cacheResource(this.sessionContext.id, 'user', createdUser.id, createdUser);
 
       return result;
     }
 
-    const successful = normalized.filter(entry => entry.success && entry.data);
-    const successfulUsers = successful
-      .filter((entry): entry is typeof entry & { data: LMUser } => entry.data !== undefined)
-      .map(entry => entry.data);
+    const successfulUsers = this.extractSuccessfulItems(normalized);
 
     const result: OperationResult<LMUser> = {
       success: batchResult.success,
@@ -184,8 +162,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
       results: normalized
     };
 
-    this.storeInSession('create', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'create', result);
+    this.recordAndStore('create', result);
 
     return result;
   }
@@ -196,8 +173,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(validated);
 
     if (isBatch) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const resolution = await BatchOperationResolver.resolveItems<any>(
+      const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
         validated,
         this.sessionContext,
         this.client,
@@ -218,8 +194,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
           const mergedUpdates = { ...user, ...updates };
           delete mergedUpdates.id;
           delete mergedUpdates.userId;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return this.client.updateUser(userId as number, mergedUpdates as any);
+          return this.client.updateUser(userId as number, mergedUpdates);
         },
         {
           maxConcurrent: batchOptions.maxConcurrent || 5,
@@ -229,13 +204,11 @@ export class UserHandler extends ResourceHandler<LMUser> {
       );
 
       const normalized = this.normalizeBatchResults(batchResult);
-      const successful = normalized.filter(entry => entry.success && entry.data);
+      const successfulUsers = this.extractSuccessfulItems(normalized);
 
       const result: OperationResult<LMUser> = {
         success: batchResult.success,
-        items: successful
-          .filter((entry): entry is typeof entry & { data: LMUser } => entry.data !== undefined)
-          .map(entry => entry.data),
+        items: successfulUsers,
         summary: batchResult.summary,
         request: {
           batch: true,
@@ -246,8 +219,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
         results: normalized
       };
 
-      this.storeInSession('update', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'update', result);
+      this.recordAndStore('update', result);
 
       return result;
     }
@@ -270,8 +242,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'update', result);
+    this.recordAndStore('update', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'user', userId, apiResult.data);
 
     return result;
@@ -279,7 +250,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
 
   protected async handleDelete(args: DeleteOperationArgs): Promise<OperationResult<LMUser>> {
     const validated = validateDeleteUser(args);
-    const isBatch = BatchOperationResolver.isBatchOperation(validated, 'users') || 
+    const isBatch = BatchOperationResolver.isBatchOperation(validated, 'users') ||
                      (validated.ids && Array.isArray(validated.ids));
     const batchOptions = BatchOperationResolver.extractBatchOptions(validated);
 
@@ -289,8 +260,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
       if (validated.ids && Array.isArray(validated.ids)) {
         itemsToDelete = validated.ids.map((id: number) => ({ id }));
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const resolution = await BatchOperationResolver.resolveItems<any>(
+        const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
           validated,
           this.sessionContext,
           this.client,
@@ -309,8 +279,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
             throw new McpError(ErrorCode.InvalidParams, 'User ID is required for delete');
           }
           await this.client.deleteUser(userId as number);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return { id: userId } as any as LMUser;
+          return { id: userId } as unknown as LMUser;
         },
         {
           maxConcurrent: batchOptions.maxConcurrent || 5,
@@ -331,8 +300,7 @@ export class UserHandler extends ResourceHandler<LMUser> {
         results: normalized
       };
 
-      this.storeInSession('delete', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'delete', result);
+      this.recordAndStore('delete', result);
 
       return result;
     }
@@ -348,36 +316,8 @@ export class UserHandler extends ResourceHandler<LMUser> {
       data: undefined
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'user', 'delete', result);
+    this.recordAndStore('delete', result);
 
     return result;
   }
-
-  private isBatchCreate(args: Record<string, unknown>): boolean {
-    return !!(args.users && Array.isArray(args.users));
-  }
-
-  private normalizeCreateInput(args: Record<string, unknown>): Array<Record<string, unknown>> {
-    if (args.users && Array.isArray(args.users)) {
-      return args.users;
-    }
-    const singleUser = { ...args };
-    delete singleUser.operation;
-    delete singleUser.batchOptions;
-    return [singleUser];
-  }
-
-  private normalizeBatchResults(batch: BatchResult<LMUser>): Array<BatchItem<LMUser>> {
-    return batch.results.map(entry => ({
-      index: entry.index,
-      success: entry.success,
-      data: entry.data,
-      error: entry.error,
-      diagnostics: entry.diagnostics,
-      meta: entry.meta,
-      raw: entry.raw
-    }));
-  }
 }
-

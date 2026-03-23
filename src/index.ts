@@ -8,7 +8,7 @@ import { createServer } from './server.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import { APP_INFO } from './appInfo.js';
 import { SessionManager } from './session/sessionManager.js';
 import { getConfig } from './config/index.js';
@@ -85,11 +85,35 @@ async function startHttpServer() {
     sessionId?: string;
     closed: boolean;
     sessionManager: SessionManager;
+    lastActivityAt: number;
+    cleanup?: () => void;
   };
 
+  const MAX_SESSIONS = 100;
+  const SESSION_TTL_MS = config.security.sessionTimeoutMs; // Configurable via SESSION_TIMEOUT_MS env var (default 1 hour)
+  const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // Sweep every 5 minutes
+
   const sessions = new Map<string, HttpSessionContext>();
+
+  // Periodic cleanup of idle/orphaned sessions
+  const sessionCleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [sid, ctx] of sessions) {
+      if (ctx.closed || (now - ctx.lastActivityAt > SESSION_TTL_MS)) {
+        logger.info(`Evicting idle session: ${sid}`);
+        ctx.closed = true;
+        sessions.delete(sid);
+        ctx.cleanup?.();
+        ctx.sessionManager.deleteContext(sid);
+        ctx.server.close().catch((err: Error) => {
+          logger.error(`Error closing evicted session ${sid}`, { error: err.message });
+        });
+      }
+    }
+  }, SESSION_CLEANUP_INTERVAL_MS);
+  sessionCleanupTimer.unref(); // Don't prevent process exit
   const buildCredentialsKey = (creds: { lm_account: string; lm_bearer_token: string }) =>
-    `${creds.lm_account}:${creds.lm_bearer_token}`;
+    createHash('sha256').update(`${creds.lm_account}:${creds.lm_bearer_token}`).digest('hex');
 
   // Handle all MCP requests at /mcp endpoint
   app.all('/mcp', async (req, res): Promise<void> => {
@@ -111,6 +135,7 @@ async function startHttpServer() {
         sessionContext = sessions.get(sessionId);
         if (sessionContext?.closed) {
           sessions.delete(sessionId);
+          sessionContext.sessionManager.deleteContext(sessionId);
           sessionContext = undefined;
         }
         // Verify client ID and credentials match
@@ -136,29 +161,52 @@ async function startHttpServer() {
             res.status(403).json({ error: 'Credential mismatch for existing MCP session.' });
             return;
           }
+
+          // Touch activity timestamp for session TTL tracking
+          sessionContext.lastActivityAt = Date.now();
         }
       }
 
       // Create new session if needed
       if (!sessionContext) {
-        let contextRef: HttpSessionContext;
-        let closeSession: (reason: string) => Promise<void>;
+        // Enforce max session limit
+        if (sessions.size >= MAX_SESSIONS) {
+          logger.warn(`Max sessions (${MAX_SESSIONS}) reached, rejecting new connection`);
+          res.status(503).json({ error: 'Server session limit reached. Please try again later.' });
+          return;
+        }
+        // Use a deferred container so callbacks can safely reference the context
+        // even though it's assigned after transport construction.
+        const deferred: {
+          ctx?: HttpSessionContext;
+          close?: (reason: string) => Promise<void>;
+        } = {};
 
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
           onsessioninitialized: (newSessionId) => {
-            contextRef.sessionId = newSessionId;
-            sessions.set(newSessionId, contextRef);
+            if (!deferred.ctx) {
+              logger.warn('onsessioninitialized fired before context was ready');
+              return;
+            }
+            deferred.ctx.sessionId = newSessionId;
+            sessions.set(newSessionId, deferred.ctx);
             logger.info(`Session initialized: ${newSessionId} for client: ${clientId}`);
             const authMode = req.auth?.authMode || 'none';
             auditLogger.logSessionCreated(newSessionId, clientId, authMode, req.requestId);
           },
           onsessionclosed: async (closedSessionId) => {
-            await closeSession(`session closed request (${closedSessionId})`);
+            try {
+              if (deferred.close) {
+                await deferred.close(`session closed request (${closedSessionId})`);
+              }
+            } catch (err) {
+              logger.error('Error in onsessionclosed', { error: (err as Error).message });
+            }
           }
         });
 
-        const { server: mcpServer, sessionManager: serverSessionManager } = await createServer({
+        const { server: mcpServer, sessionManager: serverSessionManager, cleanup } = await createServer({
           logger,
           credentials,
           clientId,
@@ -166,18 +214,20 @@ async function startHttpServer() {
           apiTimeoutMs: config.logicMonitor.apiTimeoutMs,
         });
 
-        const sessionManager = serverSessionManager;
-
-        contextRef = {
+        const contextRef: HttpSessionContext = {
           transport,
           server: mcpServer,
           clientId,
           credentialsKey,
           closed: false,
-          sessionManager
+          sessionManager: serverSessionManager,
+          lastActivityAt: Date.now(),
+          cleanup,
         };
 
-        closeSession = async (reason: string) => {
+        deferred.ctx = contextRef;
+
+        deferred.close = async (reason: string) => {
           if (contextRef.closed) {
             return;
           }
@@ -198,7 +248,10 @@ async function startHttpServer() {
 
           try {
             await contextRef.server.close();
-            contextRef.sessionManager.deleteContext(contextRef.sessionId);
+            contextRef.cleanup?.();
+            if (contextRef.sessionId) {
+              contextRef.sessionManager.deleteContext(contextRef.sessionId);
+            }
           } catch (closeError) {
             const err = closeError as Error;
             logger.error('Error closing MCP session', { error: err.message });
@@ -206,11 +259,11 @@ async function startHttpServer() {
         };
 
         transport.onclose = () => {
-          if (!closeSession) {
+          if (!deferred.close) {
             logger.warn('Transport closed before session was fully initialized');
             return;
           }
-          closeSession('transport closed').catch((closeError: Error) => {
+          deferred.close('transport closed').catch((closeError: Error) => {
             logger.error('Failed to close MCP session', { error: closeError.message });
           });
         };
@@ -238,6 +291,7 @@ async function startHttpServer() {
 
   // Register session cleanup on shutdown
   gracefulShutdown.registerHandler(async () => {
+    clearInterval(sessionCleanupTimer);
     logger.info('Closing all MCP sessions...');
     const closePromises = Array.from(sessions.values()).map(async (session) => {
       if (!session.closed && session.sessionId) {

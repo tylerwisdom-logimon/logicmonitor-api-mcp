@@ -8,54 +8,54 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 // Common schemas
 const propertySchema = z.object({
-  name: z.string(),
-  value: z.string()
+  name: z.string().describe('Property name'),
+  value: z.string().describe('Property value')
 });
 
 const batchOptionsSchema = z.object({
-  maxConcurrent: z.number().min(1).max(50).optional(),
-  continueOnError: z.boolean().optional(),
-  dryRun: z.boolean().optional()
+  maxConcurrent: z.number().min(1).max(50).optional().describe('Max parallel API requests (default 5)'),
+  continueOnError: z.boolean().optional().describe('If true, continue processing remaining items when one fails'),
+  dryRun: z.boolean().optional().describe('If true, validate inputs without executing the operation')
 }).optional();
 
-// Single group create schema
+// Single group create schema — .loose() allows additional LM API fields not explicitly listed
 const singleGroupSchema = z.object({
-  name: z.string(),
-  description: z.string().optional(),
-  properties: z.array(propertySchema).optional(),
-  autoBalance: z.boolean().optional(),
-  autoBalanceInstanceCountThreshold: z.number().optional()
+  name: z.string().describe('Collector group name'),
+  description: z.string().optional().describe('Collector group description'),
+  properties: z.array(propertySchema).optional().describe('Array of custom properties as {name, value} objects'),
+  autoBalance: z.boolean().optional().describe('When true, enables automatic load balancing of collectors within the group.'),
+  autoBalanceInstanceCountThreshold: z.number().optional().describe('Instance count threshold that triggers auto-balancing. Only applies when autoBalance is true.')
 }).loose();
 
-// List operation schema
+// List operation schema — .strict() rejects unknown parameters
 export const CollectorGroupListArgsSchema = z.object({
-  operation: z.literal('list'),
-  filter: z.string().optional(),
-  size: z.number().min(1).max(1000).optional(),
-  offset: z.number().min(0).optional(),
-  fields: z.string().optional(),
-  autoPaginate: z.boolean().optional()
+  operation: z.literal('list').describe('The operation to perform'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/collector_group for valid field names.'),
+  size: z.number().min(1).max(1000).optional().describe('Items per page (default 50, max 1000)'),
+  offset: z.number().min(0).optional().describe('Number of items to skip for pagination (default 0)'),
+  fields: z.string().optional().describe('Comma-separated list of fields to return, e.g. "id,displayName"'),
+  autoPaginate: z.boolean().optional().describe('When true, automatically fetches all pages. Use cautiously on large result sets.')
 }).strict();
 
-// Get operation schema
+// Get operation schema — .strict() rejects unknown parameters
 export const CollectorGroupGetArgsSchema = z.object({
-  operation: z.literal('get'),
-  id: z.number().optional(),
-  groupId: z.number().optional(),
-  fields: z.string().optional()
+  operation: z.literal('get').describe('The operation to perform'),
+  id: z.number().optional().describe('Collector group ID (preferred). Alias: groupId'),
+  groupId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  fields: z.string().optional().describe('Comma-separated list of fields to return, e.g. "id,displayName"')
 }).strict();
 
-// Create operation schema
+// Create operation schema — .loose() allows additional LM API fields not explicitly listed
 export const CollectorGroupCreateArgsSchema = z.object({
-  operation: z.literal('create'),
-  name: z.string().optional(),
-  description: z.string().optional(),
-  properties: z.array(propertySchema).optional(),
-  customProperties: z.array(propertySchema).optional(),
-  autoBalance: z.boolean().optional(),
-  autoBalanceInstanceCountThreshold: z.number().optional(),
-  groups: z.array(singleGroupSchema).min(1).optional(),
-  batchOptions: batchOptionsSchema
+  operation: z.literal('create').describe('The operation to perform'),
+  name: z.string().optional().describe('Collector group name (required when groups is not provided)'),
+  description: z.string().optional().describe('Collector group description'),
+  properties: z.array(propertySchema).optional().describe('Array of custom properties as {name, value} objects'),
+  customProperties: z.array(propertySchema).optional().describe('Array of custom properties as {name, value} objects (alternate key)'),
+  autoBalance: z.boolean().optional().describe('When true, enables automatic load balancing of collectors within the group.'),
+  autoBalanceInstanceCountThreshold: z.number().optional().describe('Instance count threshold that triggers auto-balancing. Only applies when autoBalance is true.'),
+  groups: z.array(singleGroupSchema).min(1).optional().describe('Array of collector group definitions for batch creation.'),
+  batchOptions: batchOptionsSchema.describe('Options for controlling batch operation behavior.')
 }).loose()
 .superRefine((data, ctx) => {
   // If not using groups array, require name
@@ -68,34 +68,34 @@ export const CollectorGroupCreateArgsSchema = z.object({
   }
 });
 
-// Update operation schema
+// Update operation schema — .loose() allows additional LM API fields not explicitly listed
 export const CollectorGroupUpdateArgsSchema = z.object({
-  operation: z.literal('update'),
-  id: z.number().optional(),
-  groupId: z.number().optional(),
-  name: z.string().optional(),
-  description: z.string().optional(),
-  properties: z.array(propertySchema).optional(),
-  customProperties: z.array(propertySchema).optional(),
-  autoBalance: z.boolean().optional(),
-  autoBalanceInstanceCountThreshold: z.number().optional(),
-  groups: z.array(z.any()).optional(),
-  updates: z.record(z.string(), z.any()).optional(),
-  applyToPrevious: z.string().optional(),
-  filter: z.string().optional(),
-  batchOptions: batchOptionsSchema
+  operation: z.literal('update').describe('The operation to perform'),
+  id: z.number().optional().describe('Collector group ID (preferred). Alias: groupId'),
+  groupId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  name: z.string().optional().describe('Updated collector group name'),
+  description: z.string().optional().describe('Updated collector group description'),
+  properties: z.array(propertySchema).optional().describe('Array of custom properties as {name, value} objects'),
+  customProperties: z.array(propertySchema).optional().describe('Array of custom properties as {name, value} objects (alternate key)'),
+  autoBalance: z.boolean().optional().describe('When true, enables automatic load balancing of collectors within the group.'),
+  autoBalanceInstanceCountThreshold: z.number().optional().describe('Instance count threshold that triggers auto-balancing. Only applies when autoBalance is true.'),
+  groups: z.array(z.object({ id: z.number().optional().describe('Collector group ID (preferred). Alias: groupId'), groupId: z.number().optional().describe('Alias for id. Prefer using id instead.') }).passthrough()).min(1).optional().describe('Array of collector group references for batch update. Each must include id or groupId.'),
+  updates: z.record(z.string(), z.unknown()).optional().describe('Key-value map of fields to update across all targeted groups.'),
+  applyToPrevious: z.string().optional().describe('Session variable name containing IDs from a prior list, e.g. "lastDeviceListIds". Use lm_session list to see available variables.'),
+  filter: z.string().optional().describe('LM filter expression to select groups for batch update, e.g. "name:*prod*".'),
+  batchOptions: batchOptionsSchema.describe('Options for controlling batch operation behavior.')
 }).loose();
 
-// Delete operation schema
+// Delete operation schema — .strict() rejects unknown parameters
 export const CollectorGroupDeleteArgsSchema = z.object({
-  operation: z.literal('delete'),
-  id: z.number().optional(),
-  groupId: z.number().optional(),
-  ids: z.array(z.number()).optional(),
-  groups: z.array(z.any()).optional(),
-  applyToPrevious: z.string().optional(),
-  filter: z.string().optional(),
-  batchOptions: batchOptionsSchema
+  operation: z.literal('delete').describe('The operation to perform'),
+  id: z.number().optional().describe('Collector group ID (preferred). Alias: groupId'),
+  groupId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  ids: z.array(z.number()).optional().describe('Array of collector group IDs to delete in batch.'),
+  groups: z.array(z.object({ id: z.number().optional().describe('Collector group ID (preferred). Alias: groupId'), groupId: z.number().optional().describe('Alias for id. Prefer using id instead.') }).passthrough()).min(1).optional().describe('Array of collector group references for batch deletion. Each must include id or groupId.'),
+  applyToPrevious: z.string().optional().describe('Session variable name containing IDs from a prior list, e.g. "lastDeviceListIds". Use lm_session list to see available variables.'),
+  filter: z.string().optional().describe('LM filter expression to select groups for batch deletion, e.g. "name:*test*".'),
+  batchOptions: batchOptionsSchema.describe('Options for controlling batch operation behavior.')
 }).strict();
 
 // Combined operation schema with discriminated union
@@ -170,4 +170,3 @@ export function validateDeleteCollectorGroup(args: unknown) {
   }
   return result.data;
 }
-

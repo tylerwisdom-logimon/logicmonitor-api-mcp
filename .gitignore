@@ -41,6 +41,9 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# LLM eval reports
+tests/eval/reports/
+
 # PM2
 .pm2/
 CLAUDE.md

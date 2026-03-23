@@ -1,0 +1,104 @@
+[
+  {
+    "id": "sdt-list-active",
+    "description": "List all currently active SDTs should use lm_sdt with isEffective filter",
+    "category": "tool-selection",
+    "tags": ["sdt", "list", "filter"],
+    "steps": [
+      {
+        "userPrompt": "Show me all currently active scheduled downtimes in our environment.",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "isEffective" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sdt-create-device",
+    "description": "Create a one-time SDT on a device should use lm_sdt create with ResourceSDT type",
+    "category": "parameter-mapping",
+    "tags": ["sdt", "create", "device"],
+    "steps": [
+      {
+        "userPrompt": "Put device 42 into a one-time maintenance window starting now for 2 hours. Add a comment saying 'Patching server'.",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "create",
+              "type": { "contains": "ResourceSDT" },
+              "deviceId": 42,
+              "comment": { "contains": "Patching" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sdt-get-details",
+    "description": "Get details of a specific SDT by ID",
+    "category": "parameter-mapping",
+    "tags": ["sdt", "get"],
+    "steps": [
+      {
+        "userPrompt": "Get the full details for SDT R_42.",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "get",
+              "id": "R_42"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sdt-list-by-type",
+    "description": "List SDTs filtered by resource type",
+    "category": "parameter-mapping",
+    "tags": ["sdt", "list", "filter"],
+    "steps": [
+      {
+        "userPrompt": "Find all device-level SDTs in the system.",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "ResourceSDT" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "sdt-delete",
+    "description": "Delete an SDT by ID",
+    "category": "parameter-mapping",
+    "tags": ["sdt", "delete"],
+    "steps": [
+      {
+        "userPrompt": "Remove the scheduled downtime R_15, the maintenance is complete.",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "delete",
+              "id": "R_15"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

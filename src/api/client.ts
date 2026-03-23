@@ -15,6 +15,8 @@ import {
   LMDeviceDatasource,
   LMDeviceDatasourceInstance,
   LMDeviceData,
+  LMSDT,
+  LMOpsNote,
   LMPaginatedResponse,
   LMAlertPaginatedResponse,
   LMErrorResponse 
@@ -250,11 +252,13 @@ export class LogicMonitorClient {
       params: { ...params, size: requestedSize, offset: baseOffset }
     };
 
+    const MAX_PAGES = 100;
     let offset = baseOffset;
     const allItems: T[] = [];
     let totalCount = 0;
     let searchId: string | undefined;
     let hasMore = true;
+    let pageCount = 0;
     const pages: Array<{ offset: number; size: number; returned: number; response: unknown }> = [];
     const startedAt = performance.now();
     let meta: LogicMonitorResponseMeta | undefined;
@@ -267,17 +271,35 @@ export class LogicMonitorClient {
     });
 
     while (hasMore) {
+      pageCount++;
+      if (pageCount > MAX_PAGES) {
+        this.logger.warn(`Pagination safety limit reached for ${endpoint}`, {
+          pageCount: MAX_PAGES,
+          totalItems: allItems.length,
+          expectedTotal: totalCount
+        });
+        break;
+      }
+
       const pageStartedAt = performance.now();
       try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pageParams: Record<string, any> = { ...params, size: requestedSize, offset };
+        if (searchId) {
+          pageParams.searchId = searchId;
+        }
+
         const response = await this.axiosInstance.get<LMPaginatedResponse<T>>(endpoint, {
-          params: { ...params, size: requestedSize, offset }
+          params: pageParams
         });
         const duration = performance.now() - pageStartedAt;
 
         const data = response.data;
         if (!data || typeof data.total !== 'number') {
-          this.logger.warn('Invalid pagination response structure', { endpoint, data });
-          break;
+          throw new LogicMonitorApiError(
+            `Invalid pagination response structure from ${endpoint}: missing total or items`,
+            { status: response.status, requestUrl: endpoint, requestMethod: 'get' }
+          );
         }
 
         if (!meta) {
@@ -1238,13 +1260,15 @@ export class LogicMonitorClient {
       } else if (typeof reportedTotal === 'number') {
         if (reportedTotal >= 0 && allItems.length >= reportedTotal) {
           fetchMore = false;
-        } else if (reportedTotal < 0 && allItems.length >= Math.abs(reportedTotal)) {
-          fetchMore = false;
+        } else if (reportedTotal < 0) {
+          // Negative total is an LM API quirk meaning "more items than could be counted"
+          // Continue fetching - items.length < pageSize check above handles exhaustion
+          currentOffset += items.length;
         } else {
-          currentOffset += pageSize;
+          currentOffset += items.length;
         }
       } else {
-        currentOffset += pageSize;
+        currentOffset += items.length;
       }
     }
 
@@ -2002,6 +2026,242 @@ export class LogicMonitorClient {
 
     return {
       data: response.data,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  // SDT Management Methods
+  async listSdts(params?: {
+    filter?: string;
+    size?: number;
+    offset?: number;
+    fields?: string;
+    autoPaginate?: boolean;
+  }): Promise<ApiListResult<LMSDT>> {
+    const { autoPaginate = true, ...restParams } = params || {};
+    const sanitizedParams: Record<string, unknown> = {
+      filter: restParams?.filter || undefined,
+      size: restParams?.size ?? 50,
+      offset: restParams?.offset ?? 0,
+      fields: restParams?.fields
+    };
+
+    return this.paginateAll<LMSDT>('/sdt/sdts', sanitizedParams, autoPaginate);
+  }
+
+  async getSdt(sdtId: string, params?: { fields?: string }): Promise<ApiResult<LMSDT>> {
+    const { fields } = params || {};
+
+    const queryParams = Object.fromEntries(
+      Object.entries({
+        fields: fields && fields !== '*' ? fields : undefined
+      }).filter(([, value]) => value !== undefined && value !== null)
+    );
+
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/sdt/sdts/${sdtId}`,
+      method: 'get',
+      params: queryParams
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.get(`/sdt/sdts/${sdtId}`, {
+      params: queryParams
+    });
+    const duration = performance.now() - startedAt;
+
+    const sdt = response.data;
+
+    if (!sdt || typeof sdt.id === 'undefined') {
+      throw new Error(`Invalid SDT response structure for SDT ${sdtId}`);
+    }
+
+    return {
+      data: sdt,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  async createSdt(sdtData: Record<string, unknown>): Promise<ApiResult<LMSDT>> {
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: '/sdt/sdts',
+      method: 'post',
+      payload: sdtData
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.post('/sdt/sdts', sdtData);
+    const duration = performance.now() - startedAt;
+
+    const sdt = response.data;
+
+    if (!sdt || typeof sdt.id === 'undefined') {
+      throw new Error('Invalid SDT response structure returned from create.');
+    }
+
+    return {
+      data: sdt,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  async updateSdt(sdtId: string, updates: Record<string, unknown>): Promise<ApiResult<LMSDT>> {
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/sdt/sdts/${sdtId}`,
+      method: 'put',
+      payload: updates
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.put(`/sdt/sdts/${sdtId}`, updates);
+    const duration = performance.now() - startedAt;
+
+    const sdt = response.data;
+
+    if (!sdt || typeof sdt.id === 'undefined') {
+      throw new Error(`Invalid SDT response structure for SDT ${sdtId}`);
+    }
+
+    return {
+      data: sdt,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  async deleteSdt(sdtId: string): Promise<ApiResult<void>> {
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/sdt/sdts/${sdtId}`,
+      method: 'delete'
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.delete(`/sdt/sdts/${sdtId}`);
+    const duration = performance.now() - startedAt;
+
+    return {
+      data: undefined,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  // OpsNote Management Methods
+  async listOpsNotes(params?: {
+    filter?: string;
+    size?: number;
+    offset?: number;
+    fields?: string;
+    autoPaginate?: boolean;
+  }): Promise<ApiListResult<LMOpsNote>> {
+    const { autoPaginate = true, ...restParams } = params || {};
+    const sanitizedParams: Record<string, unknown> = {
+      filter: restParams?.filter || undefined,
+      size: restParams?.size ?? 50,
+      offset: restParams?.offset ?? 0,
+      fields: restParams?.fields
+    };
+
+    return this.paginateAll<LMOpsNote>('/setting/opsnotes', sanitizedParams, autoPaginate);
+  }
+
+  async getOpsNote(noteId: string, params?: { fields?: string }): Promise<ApiResult<LMOpsNote>> {
+    const { fields } = params || {};
+
+    const queryParams = Object.fromEntries(
+      Object.entries({
+        fields: fields && fields !== '*' ? fields : undefined
+      }).filter(([, value]) => value !== undefined && value !== null)
+    );
+
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/setting/opsnotes/${noteId}`,
+      method: 'get',
+      params: queryParams
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.get(`/setting/opsnotes/${noteId}`, {
+      params: queryParams
+    });
+    const duration = performance.now() - startedAt;
+
+    const note = response.data;
+
+    if (!note || typeof note.id === 'undefined') {
+      throw new Error(`Invalid OpsNote response structure for note ${noteId}`);
+    }
+
+    return {
+      data: note,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  async createOpsNote(noteData: Record<string, unknown>): Promise<ApiResult<LMOpsNote>> {
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: '/setting/opsnotes',
+      method: 'post',
+      payload: noteData
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.post('/setting/opsnotes', noteData);
+    const duration = performance.now() - startedAt;
+
+    const note = response.data;
+
+    if (!note || typeof note.id === 'undefined') {
+      throw new Error('Invalid OpsNote response structure returned from create.');
+    }
+
+    return {
+      data: note,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  async updateOpsNote(noteId: string, updates: Record<string, unknown>): Promise<ApiResult<LMOpsNote>> {
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/setting/opsnotes/${noteId}`,
+      method: 'patch',
+      payload: updates
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.patch(`/setting/opsnotes/${noteId}`, updates);
+    const duration = performance.now() - startedAt;
+
+    const note = response.data;
+
+    if (!note || typeof note.id === 'undefined') {
+      throw new Error(`Invalid OpsNote response structure for note ${noteId}`);
+    }
+
+    return {
+      data: note,
+      raw: response.data,
+      meta: this.createResponseMeta(response, requestContext, duration)
+    };
+  }
+
+  async deleteOpsNote(noteId: string): Promise<ApiResult<void>> {
+    const requestContext: LogicMonitorRequestContext = {
+      endpoint: `/setting/opsnotes/${noteId}`,
+      method: 'delete'
+    };
+
+    const startedAt = performance.now();
+    const response = await this.axiosInstance.delete(`/setting/opsnotes/${noteId}`);
+    const duration = performance.now() - startedAt;
+
+    return {
+      data: undefined,
       raw: response.data,
       meta: this.createResponseMeta(response, requestContext, duration)
     };

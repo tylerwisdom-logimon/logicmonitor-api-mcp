@@ -15,6 +15,7 @@ import { listPrompts, getPrompt, getPromptContent } from './tools/prompts.js';
 import { SessionManager } from './session/sessionManager.js';
 import { metricsManager } from './metrics/metricsManager.js';
 import { getKnownFields, ResourceKey } from './utils/fieldMetadata.js';
+import { ResourceHandler } from './resources/base/resourceHandler.js';
 import { DeviceHandler } from './resources/device/deviceHandler.js';
 import { DeviceGroupHandler } from './resources/deviceGroup/deviceGroupHandler.js';
 import { AlertHandler } from './resources/alert/alertHandler.js';
@@ -26,20 +27,12 @@ import { DashboardHandler } from './resources/dashboard/dashboardHandler.js';
 import { CollectorGroupHandler } from './resources/collectorGroup/collectorGroupHandler.js';
 import { DeviceDataHandler } from './resources/deviceData/deviceDataHandler.js';
 import { SessionHandler } from './resources/session/sessionHandler.js';
+import { SdtHandler } from './resources/sdt/sdtHandler.js';
+import { OpsnoteHandler } from './resources/opsnote/opsnoteHandler.js';
 import type { ResourceType, BaseOperationArgs, OperationResult } from './types/operations.js';
 import { buildToolResponse } from './tools/utils/tool-response.js';
-import { registerAlertTool } from './tools/alert/registerAlertTool.js';
-import { registerCollectorTool } from './tools/collector/registerCollectorTool.js';
-import { registerDeviceGroupTool } from './tools/deviceGroup/registerDeviceGroupTool.js';
-import { registerDeviceTool } from './tools/device/registerDeviceTool.js';
-import { registerWebsiteTool } from './tools/website/registerWebsiteTool.js';
-import { registerWebsiteGroupTool } from './tools/websiteGroup/registerWebsiteGroupTool.js';
-import { registerUserTool } from './tools/user/registerUserTool.js';
-import { registerDashboardTool } from './tools/dashboard/registerDashboardTool.js';
-import { registerCollectorGroupTool } from './tools/collectorGroup/registerCollectorGroupTool.js';
-import { registerDeviceDataTool } from './tools/deviceData/registerDeviceDataTool.js';
-import { registerSessionTool } from './tools/session/registerSessionTool.js';
-import type { ToolRegistration } from './tools/types.js';
+import { registerAllTools } from './tools/registry.js';
+import type { ToolRegistration } from './tools/registry.js';
 
 export interface ServerConfig {
   name?: string;
@@ -78,7 +71,7 @@ export async function createServer(config: ServerConfig = {}) {
     APP_DESCRIPTION || 'Use the LogicMonitor tools to manage resources, devices, collectors, alerts, users, dashboards, and more.',
     'Follow this order every time:',
     '1) Authenticate with LM_ACCOUNT / LM_BEARER_TOKEN environment variables (stdio) or X-LM-* headers (HTTP).',
-    '2) Before calling any lm_* tool, read health://logicmonitor/fields/<resource> to confirm valid field/filter names. Clients must not guess fields; unknown names are rejected.',
+    '2) Before calling any lm_* tool, try reading health://logicmonitor/fields/<resource> to confirm valid field/filter names. If resource reads are not available in your client, refer to the tool and parameter descriptions for field guidance.',
     '3) Before repeating a query or running create/update/delete, read health://logicmonitor/session (or call lm_session get historyLimit=5 includeResults=true) to reuse prior results and applyToPrevious handles instead of relisting.',
     '4) Tool summaries call out new session keys (for example session.lastDeviceListIds). Reuse those keys via applyToPrevious or lm_session instead of issuing duplicate list calls.',
     '5) Use lm_session create/update/delete to manage custom batches and clean up temporary context when finished.'
@@ -165,7 +158,7 @@ export async function createServer(config: ServerConfig = {}) {
       resource: 'device_group',
       uri: 'health://logicmonitor/fields/device_group',
       description: 'Valid fields for lm_device_group tool.',
-      filterExamples: ['name:"*servers*"', 'parentId:1']
+      filterExamples: ['name:"*servers*"', 'parentId:1', 'appliesTo:""  (static groups only — empty appliesTo means devices can be manually assigned)']
     },
     {
       key: 'website',
@@ -229,6 +222,20 @@ export async function createServer(config: ServerConfig = {}) {
       uri: 'health://logicmonitor/fields/device_datasource_instance',
       description: 'Valid fields for lm_device_data list_instances operation.',
       filterExamples: ['name:"*"', 'stopMonitoring:false']
+    },
+    {
+      key: 'sdt',
+      resource: 'sdt',
+      uri: 'health://logicmonitor/fields/sdt',
+      description: 'Valid fields for lm_sdt operations.',
+      filterExamples: ['type:"ResourceSDT"', 'isEffective:true', 'admin:"*"']
+    },
+    {
+      key: 'opsnote',
+      resource: 'opsnote',
+      uri: 'health://logicmonitor/fields/opsnote',
+      description: 'Valid fields for lm_opsnote operations.',
+      filterExamples: ['tags:"deployment"', 'createdBy:"admin"', '_all:"*maintenance*"']
     }
   ];
 
@@ -371,38 +378,33 @@ export async function createServer(config: ServerConfig = {}) {
     return cachedClient;
   }
 
-  // Tool response config per resource type for LLM-friendly summaries
-  const toolResponseConfigs: Record<string, { resourceName: string; resourceTitle: string }> = {
-    device: { resourceName: 'device', resourceTitle: 'LogicMonitor device' },
-    deviceGroup: { resourceName: 'deviceGroup', resourceTitle: 'LogicMonitor device group' },
-    website: { resourceName: 'website', resourceTitle: 'LogicMonitor website' },
-    websiteGroup: { resourceName: 'websiteGroup', resourceTitle: 'LogicMonitor website group' },
-    collector: { resourceName: 'collector', resourceTitle: 'LogicMonitor collector' },
-    alert: { resourceName: 'alert', resourceTitle: 'LogicMonitor alert' },
-    user: { resourceName: 'user', resourceTitle: 'LogicMonitor user' },
-    dashboard: { resourceName: 'dashboard', resourceTitle: 'LogicMonitor dashboard' },
-    collectorGroup: { resourceName: 'collectorGroup', resourceTitle: 'LogicMonitor collector group' },
-    deviceData: { resourceName: 'deviceData', resourceTitle: 'LogicMonitor device data' },
-    session: { resourceName: 'session', resourceTitle: 'LogicMonitor session' }
+  // Single source of truth for all tool ↔ resource type mappings
+  type HandlerConstructor = new (client: LogicMonitorClient, sm: SessionManager, sid?: string) => ResourceHandler;
+  const TOOL_REGISTRY: Record<string, {
+    resourceType: ResourceType;
+    resourceTitle: string;
+    handler: HandlerConstructor | null; // null = special case (session)
+  }> = {
+    'lm_device':          { resourceType: 'device',         resourceTitle: 'LogicMonitor device',          handler: DeviceHandler },
+    'lm_device_group':    { resourceType: 'deviceGroup',    resourceTitle: 'LogicMonitor device group',    handler: DeviceGroupHandler },
+    'lm_website':         { resourceType: 'website',        resourceTitle: 'LogicMonitor website',         handler: WebsiteHandler },
+    'lm_website_group':   { resourceType: 'websiteGroup',   resourceTitle: 'LogicMonitor website group',   handler: WebsiteGroupHandler },
+    'lm_collector':       { resourceType: 'collector',      resourceTitle: 'LogicMonitor collector',       handler: CollectorHandler },
+    'lm_alert':           { resourceType: 'alert',          resourceTitle: 'LogicMonitor alert',           handler: AlertHandler },
+    'lm_user':            { resourceType: 'user',           resourceTitle: 'LogicMonitor user',            handler: UserHandler },
+    'lm_dashboard':       { resourceType: 'dashboard',      resourceTitle: 'LogicMonitor dashboard',       handler: DashboardHandler },
+    'lm_collector_group': { resourceType: 'collectorGroup', resourceTitle: 'LogicMonitor collector group', handler: CollectorGroupHandler },
+    'lm_device_data':     { resourceType: 'deviceData',     resourceTitle: 'LogicMonitor device data',     handler: DeviceDataHandler },
+    'lm_sdt':             { resourceType: 'sdt',             resourceTitle: 'LogicMonitor SDT',             handler: SdtHandler },
+    'lm_opsnote':         { resourceType: 'opsnote',         resourceTitle: 'LogicMonitor OpsNote',         handler: OpsnoteHandler },
+    'lm_session':         { resourceType: 'session',        resourceTitle: 'LogicMonitor session',         handler: null },
   };
 
   // Register tools -- callbacks are stubs because real dispatch goes through CallToolRequestSchema handler below.
   // Each register function returns ToolRegistration metadata so we can build the ListTools response
   // from our own registry instead of accessing private SDK internals.
   const stubHandler = async () => ({ content: [] as never[] });
-  const registeredTools: ToolRegistration[] = [
-    registerAlertTool(mcpServer, stubHandler),
-    registerCollectorTool(mcpServer, stubHandler),
-    registerDeviceGroupTool(mcpServer, stubHandler),
-    registerDeviceTool(mcpServer, stubHandler),
-    registerWebsiteTool(mcpServer, stubHandler),
-    registerWebsiteGroupTool(mcpServer, stubHandler),
-    registerUserTool(mcpServer, stubHandler),
-    registerDashboardTool(mcpServer, stubHandler),
-    registerCollectorGroupTool(mcpServer, stubHandler),
-    registerDeviceDataTool(mcpServer, stubHandler),
-    registerSessionTool(mcpServer, stubHandler),
-  ];
+  const registeredTools: ToolRegistration[] = registerAllTools(mcpServer, stubHandler);
 
   // Override the SDK's ListToolsRequestSchema handler to apply schema flattening.
   // This makes discriminated union parameters visible in the MCP Inspector.
@@ -422,7 +424,9 @@ export async function createServer(config: ServerConfig = {}) {
           pipeStrategy: 'input'
         }) as Record<string, unknown>;
 
-        inputSchema = (jsonSchema.anyOf && Array.isArray(jsonSchema.anyOf))
+        const hasUnion = (jsonSchema.anyOf && Array.isArray(jsonSchema.anyOf)) ||
+                         (jsonSchema.oneOf && Array.isArray(jsonSchema.oneOf));
+        inputSchema = hasUnion
           ? flattenDiscriminatedUnion(jsonSchema)
           : jsonSchema;
       }
@@ -537,9 +541,10 @@ export async function createServer(config: ServerConfig = {}) {
       metricsManager.recordSuccess(name, summarizeResultForMetrics(result));
       logger.info('Tool call successful', { tool: name, sessionId });
 
-      const responseConfig = toolResponseConfigs[resourceType] || {
+      const registryEntry = TOOL_REGISTRY[name];
+      const responseConfig = {
         resourceName: resourceType,
-        resourceTitle: `LogicMonitor ${resourceType}`
+        resourceTitle: registryEntry?.resourceTitle ?? `LogicMonitor ${resourceType}`
       };
 
       return buildToolResponse(args as BaseOperationArgs, result as OperationResult<unknown>, responseConfig);
@@ -572,7 +577,7 @@ export async function createServer(config: ServerConfig = {}) {
       // API and application errors return as tool content with isError flag
       // so LLM clients can see the error details and decide how to proceed
       const errorMessage = error instanceof LogicMonitorApiError
-        ? `LogicMonitor API error${error.status ? ` (status ${error.status})` : ''}${error.code ? ` [${error.code}]` : ''}: ${error.message}`
+        ? formatApiError(error)
         : (message || 'An unknown error occurred');
 
       return {
@@ -587,29 +592,38 @@ export async function createServer(config: ServerConfig = {}) {
     }
   });
 
-  /**
-   * Extract resource type from tool name
-   */
-  function getResourceTypeFromToolName(toolName: string): ResourceType | null {
-    const mapping: Record<string, ResourceType> = {
-      'lm_device': 'device',
-      'lm_device_group': 'deviceGroup',
-      'lm_website': 'website',
-      'lm_website_group': 'websiteGroup',
-      'lm_collector': 'collector',
-      'lm_alert': 'alert',
-      'lm_user': 'user',
-      'lm_dashboard': 'dashboard',
-      'lm_collector_group': 'collectorGroup',
-      'lm_device_data': 'deviceData',
-      'lm_session': 'session'
-    };
-    return mapping[toolName] || null;
+  function formatApiError(error: LogicMonitorApiError): string {
+    const lines: string[] = [];
+
+    // Primary error message (already contains the API's errorMessage)
+    lines.push(`LogicMonitor API error (${error.status ?? 'unknown'}): ${error.message}`);
+
+    // Include errorDetail from the response body if present
+    const body = error.responseBody as Record<string, unknown> | undefined;
+    if (body?.errorDetail && typeof body.errorDetail === 'object') {
+      const detail = body.errorDetail as Record<string, unknown>;
+      const detailStr = Object.entries(detail)
+        .filter(([, v]) => v !== null && v !== undefined && v !== '')
+        .map(([k, v]) => `  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+        .join('\n');
+      if (detailStr) {
+        lines.push('Error details:');
+        lines.push(detailStr);
+      }
+    }
+
+    // Lightweight status-based hints
+    if (error.status === 404) lines.push('Hint: Resource not found. Verify the ID by listing resources first.');
+    if (error.status === 401 || error.status === 403) lines.push('Hint: Check API token permissions.');
+    if (error.status === 429) lines.push('Hint: Rate limited. The server will retry automatically.');
+
+    return lines.join('\n');
   }
 
-  /**
-   * Create appropriate resource handler based on resource type
-   */
+  function getResourceTypeFromToolName(toolName: string): ResourceType | null {
+    return TOOL_REGISTRY[toolName]?.resourceType ?? null;
+  }
+
   function createResourceHandler(
     resourceType: ResourceType,
     client: LogicMonitorClient | undefined,
@@ -627,34 +641,17 @@ export async function createServer(config: ServerConfig = {}) {
       );
     }
 
-    switch (resourceType) {
-      case 'device':
-        return new DeviceHandler(client, sessionMgr, sessionId);
-      case 'deviceGroup':
-        return new DeviceGroupHandler(client, sessionMgr, sessionId);
-      case 'website':
-        return new WebsiteHandler(client, sessionMgr, sessionId);
-      case 'websiteGroup':
-        return new WebsiteGroupHandler(client, sessionMgr, sessionId);
-      case 'collector':
-        return new CollectorHandler(client, sessionMgr, sessionId);
-      case 'alert':
-        return new AlertHandler(client, sessionMgr, sessionId);
-      case 'user':
-        return new UserHandler(client, sessionMgr, sessionId);
-      case 'dashboard':
-        return new DashboardHandler(client, sessionMgr, sessionId);
-      case 'collectorGroup':
-        return new CollectorGroupHandler(client, sessionMgr, sessionId);
-      case 'deviceData':
-        return new DeviceDataHandler(client, sessionMgr, sessionId);
-      default:
-        throw new McpError(
-          ErrorCode.MethodNotFound,
-          `Unknown resource type: ${resourceType}`
-        );
+    const entry = Object.values(TOOL_REGISTRY).find(e => e.resourceType === resourceType);
+    if (!entry?.handler) {
+      throw new McpError(ErrorCode.MethodNotFound, `Unknown resource type: ${resourceType}`);
     }
+    return new entry.handler(client, sessionMgr, sessionId);
   }
 
-  return { server: mcpServer, sessionManager };
+  /** Remove the MCP logging transport from the shared logger. Call on session close. */
+  function cleanup() {
+    logger.remove(mcpLoggingTransport);
+  }
+
+  return { server: mcpServer, sessionManager, cleanup };
 }

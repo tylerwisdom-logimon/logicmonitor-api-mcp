@@ -1,0 +1,43 @@
+name: Publish to npm
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+      - run: npm test -- tests/unit/
+      - run: npm test -- tests/smoke.test.ts
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - name: Set version from release tag
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "Publishing version $TAG_VERSION from tag $GITHUB_REF_NAME"
+          npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version
+      - run: npm run build
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

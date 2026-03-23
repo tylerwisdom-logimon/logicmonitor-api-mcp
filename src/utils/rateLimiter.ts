@@ -25,6 +25,7 @@ export interface RetryOptions {
 
 export class RateLimiter {
   private currentLimits: Map<string, RateLimitInfo> = new Map();
+  private windowStartTimes: Map<string, number> = new Map();
   private defaultOptions: Required<RetryOptions> = {
     maxRetries: 3,
     initialDelay: 1000, // 1 second
@@ -33,41 +34,72 @@ export class RateLimiter {
   };
 
   /**
-   * Extract rate limit information from response headers
+   * Parse a single rate limit header value, returning null if missing or invalid
+   */
+  private parseHeader(value: unknown): number | null {
+    if (value === undefined || value === null) return null;
+    const parsed = parseInt(String(value));
+    return isNaN(parsed) ? null : parsed;
+  }
+
+  /**
+   * Extract rate limit information from response headers.
+   * Returns partial info when possible rather than discarding everything
+   * if a single header is missing.
    */
   extractRateLimitInfo(headers: AxiosHeaders | Record<string, string>): RateLimitInfo | null {
-    const limit = parseInt(headers['x-rate-limit-limit'] as string);
-    const remaining = parseInt(headers['x-rate-limit-remaining'] as string);
-    const window = parseInt(headers['x-rate-limit-window'] as string);
+    const limit = this.parseHeader(headers['x-rate-limit-limit']);
+    const remaining = this.parseHeader(headers['x-rate-limit-remaining']);
+    const window = this.parseHeader(headers['x-rate-limit-window']);
 
-    if (isNaN(limit) || isNaN(remaining) || isNaN(window)) {
+    // Need at least limit or remaining to be useful
+    if (limit === null && remaining === null) {
       return null;
     }
 
+    const windowSeconds = window ?? 60; // Default to 60s if window header missing
+
     return {
-      limit,
-      remaining,
-      window,
-      resetTime: Date.now() + (window * 1000)
+      limit: limit ?? -1,
+      remaining: remaining ?? -1,
+      window: windowSeconds
     };
   }
 
   /**
-   * Update stored rate limit info for a given key (e.g., API endpoint)
+   * Update stored rate limit info for a given key (e.g., API endpoint).
+   * Tracks window start time to calculate accurate reset times.
    */
   updateRateLimitInfo(key: string, info: RateLimitInfo | null): void {
-    if (info) {
-      this.currentLimits.set(key, info);
+    if (!info) return;
+
+    const previous = this.currentLimits.get(key);
+    const now = Date.now();
+
+    // Detect new window: remaining went up (reset) or no previous data
+    if (!previous || (previous.remaining >= 0 && info.remaining >= 0 && info.remaining > previous.remaining)) {
+      this.windowStartTimes.set(key, now);
     }
+
+    // If we haven't observed a window start yet, assume it started now
+    if (!this.windowStartTimes.has(key)) {
+      this.windowStartTimes.set(key, now);
+    }
+
+    const windowStart = this.windowStartTimes.get(key) ?? now;
+    info.resetTime = windowStart + (info.window * 1000);
+
+    this.currentLimits.set(key, info);
   }
 
   /**
-   * Check if we should preemptively back off based on remaining requests
+   * Check if we should preemptively back off based on remaining requests.
+   * Returns false if remaining is unknown (-1).
    */
   shouldBackoff(key: string, threshold: number = 10): boolean {
     const info = this.currentLimits.get(key);
-    if (!info) return false;
-    
+    if (!info || info.remaining < 0) return false;
+
     // Back off if we're getting close to the limit
     return info.remaining <= threshold;
   }
@@ -173,6 +205,7 @@ export class RateLimiter {
    */
   clear(): void {
     this.currentLimits.clear();
+    this.windowStartTimes.clear();
   }
 
   private sleep(ms: number): Promise<void> {

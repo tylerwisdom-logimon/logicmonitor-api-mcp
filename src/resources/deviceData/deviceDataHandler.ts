@@ -4,6 +4,38 @@
  */
 
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+
+/**
+ * Parse a time value into epoch seconds.
+ * Supports: epoch numbers, ISO date strings, relative strings ("-6h", "-24h", "-7d", "-30m"), and "now".
+ */
+function parseTimeValue(value: string | number | undefined, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'number') return value;
+
+  // Relative time strings: "-6h", "-24h", "-7d", "-30m"
+  const relativeMatch = value.match(/^-(\d+)(m|h|d)$/);
+  if (relativeMatch) {
+    const amount = globalThis.parseInt(relativeMatch[1], 10);
+    const unit = relativeMatch[2];
+    const now = Math.floor(Date.now() / 1000);
+    const multipliers: Record<string, number> = { m: 60, h: 3600, d: 86400 };
+    return now - (amount * (multipliers[unit] || 3600));
+  }
+
+  // "now"
+  if (value.toLowerCase() === 'now') {
+    return Math.floor(Date.now() / 1000);
+  }
+
+  // ISO date string or other parseable date
+  const parsed = new Date(value).getTime();
+  if (!isNaN(parsed)) {
+    return Math.floor(parsed / 1000);
+  }
+
+  return fallback;
+}
 import { ResourceHandler } from '../base/resourceHandler.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
@@ -14,17 +46,12 @@ import type {
   LMDeviceDataFormatted
 } from '../../types/logicmonitor.js';
 import type { OperationResult, OperationType } from '../../types/operations.js';
-import type { BatchResult, BatchItem } from '../../utils/batchProcessor.js';
+import type { BatchResult } from '../../utils/batchProcessor.js';
 import {
   validateListDatasources,
   validateListInstances,
   validateGetData
 } from './deviceDataZodSchemas.js';
-
-interface DeviceDataOperationArgs {
-  operation: 'list_datasources' | 'list_instances' | 'get_data';
-  [key: string]: unknown;
-}
 
 type DeviceDataType = LMDeviceDatasource | LMDeviceDatasourceInstance | LMDeviceDataFormatted;
 
@@ -46,9 +73,21 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
     );
   }
 
-  async handleOperation(args: DeviceDataOperationArgs): Promise<OperationResult<DeviceDataType>> {
-    const { operation } = args;
+  /**
+   * Convert a wildcard pattern (with * and ?) to a regex string,
+   * escaping all other regex special characters first.
+   */
+  private wildcardToRegex(pattern: string): string {
+    return pattern
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')  // Escape regex specials (except * and ?)
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+  }
 
+  protected override async handleCustomOperation(
+    operation: string,
+    args: unknown
+  ): Promise<OperationResult<DeviceDataType> | null> {
     switch (operation) {
       case 'list_datasources':
         return this.handleListDatasources(args);
@@ -57,10 +96,7 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
       case 'get_data':
         return this.handleGetData(args);
       default:
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Unknown operation: ${operation}`
-        );
+        return null;
     }
   }
 
@@ -84,7 +120,7 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
     // Apply datasource name filters if provided
     if (datasourceIncludeFilter) {
       const includePattern = new RegExp(
-        '^' + datasourceIncludeFilter.replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+        '^' + this.wildcardToRegex(datasourceIncludeFilter) + '$',
         'i'
       );
       items = items.filter(ds => includePattern.test(ds.dataSourceName));
@@ -92,7 +128,7 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
 
     if (datasourceExcludeFilter) {
       const excludePattern = new RegExp(
-        '^' + datasourceExcludeFilter.replace(/\*/g, '.*').replace(/\?/g, '.') + '$',
+        '^' + this.wildcardToRegex(datasourceExcludeFilter) + '$',
         'i'
       );
       items = items.filter(ds => !excludePattern.test(ds.dataSourceName));
@@ -115,8 +151,7 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list_datasources', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceData', 'list_datasources', result);
+    this.recordAndStore('list_datasources', result);
 
     return result;
   }
@@ -152,8 +187,7 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list_instances', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceData', 'list_instances', result);
+    this.recordAndStore('list_instances', result);
 
     return result;
   }
@@ -182,24 +216,8 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
     const now = Math.floor(Date.now() / 1000);
     const defaultStart = now - (24 * 60 * 60); // 24 hours ago
 
-    let startEpoch: number;
-    let endEpoch: number;
-
-    if (startDate) {
-      startEpoch = typeof startDate === 'string' ? Math.floor(new Date(startDate).getTime() / 1000) : startDate;
-    } else if (start) {
-      startEpoch = typeof start === 'string' ? Math.floor(new Date(start).getTime() / 1000) : start;
-    } else {
-      startEpoch = defaultStart;
-    }
-
-    if (endDate) {
-      endEpoch = typeof endDate === 'string' ? Math.floor(new Date(endDate).getTime() / 1000) : endDate;
-    } else if (end) {
-      endEpoch = typeof end === 'string' ? Math.floor(new Date(end).getTime() / 1000) : end;
-    } else {
-      endEpoch = now;
-    }
+    const startEpoch = parseTimeValue(startDate ?? start, defaultStart);
+    const endEpoch = parseTimeValue(endDate ?? end, now);
 
     // Prepare datapoints parameter
     let datapointsParam: string | undefined;
@@ -224,7 +242,7 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
 
     // Single instance operation
     const instId = instanceId || (instanceIds && instanceIds[0]);
-    
+
     if (!instId) {
       throw new McpError(
         ErrorCode.InvalidParams,
@@ -263,8 +281,7 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('get_data', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceData', 'get_data', result);
+    this.recordAndStore('get_data', result);
 
     return result;
   }
@@ -327,14 +344,14 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
       }
     );
 
-    const normalized = this.normalizeBatchResults(batchResult as BatchResult<LMDeviceDataFormatted>);
-    const successful = normalized.filter(entry => entry.success && entry.data);
+    const normalized = this.normalizeBatchResults(batchResult as BatchResult<LMDeviceDataFormatted>) as unknown as Array<import('../../utils/batchProcessor.js').BatchItem<LMDeviceDataFormatted>>;
+    const successfulItems = normalized
+      .filter((entry): entry is typeof entry & { data: LMDeviceDataFormatted } => entry.success && entry.data !== undefined)
+      .map(entry => entry.data);
 
     const result: OperationResult<LMDeviceDataFormatted> = {
       success: batchResult.success,
-      items: successful
-        .filter((entry): entry is typeof entry & { data: LMDeviceDataFormatted } => entry.data !== undefined)
-        .map(entry => entry.data),
+      items: successfulItems,
       summary: batchResult.summary,
       request: {
         deviceId,
@@ -349,23 +366,9 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
       results: normalized
     };
 
-    this.storeInSession('get_data', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceData', 'get_data', result);
+    this.recordAndStore('get_data', result);
 
     return result;
-  }
-
-  /**
-   * Normalize batch results to consistent format
-   */
-  private normalizeBatchResults(batchResult: BatchResult<LMDeviceDataFormatted>): Array<BatchItem<LMDeviceDataFormatted>> {
-    return batchResult.results.map((result, index) => ({
-      index,
-      success: result.success,
-      data: result.success ? result.data : undefined,
-      error: result.error,
-      diagnostics: result.diagnostics
-    }));
   }
 
   /**
@@ -474,4 +477,3 @@ export class DeviceDataHandler extends ResourceHandler<DeviceDataType> {
     );
   }
 }
-

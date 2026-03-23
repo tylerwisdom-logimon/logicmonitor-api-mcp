@@ -1,0 +1,169 @@
+[
+  {
+    "id": "multi-step-device-list-then-batch-update",
+    "description": "List production devices, then batch-disable alerting using applyToPrevious",
+    "category": "multi-step",
+    "tags": ["device", "list", "update", "batch", "session"],
+    "steps": [
+      {
+        "userPrompt": "List all production devices so I can see what we have running.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "prod" }
+            }
+          }
+        ],
+        "syntheticResult": "Listed 12 devices matching filter. Session variable 'lastDeviceListIds' contains [1,2,3,4,5,6,7,8,9,10,11,12]."
+      },
+      {
+        "userPrompt": "Now disable alerting on all of those production devices.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "update",
+              "applyToPrevious": { "contains": "lastDeviceListIds" },
+              "disableAlerting": true
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "multi-step-device-list-then-batch-delete",
+    "description": "Find dead devices, then batch-delete them using applyToPrevious",
+    "category": "multi-step",
+    "tags": ["device", "list", "delete", "batch", "session"],
+    "steps": [
+      {
+        "userPrompt": "Find all devices that have a hostStatus of dead.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "hostStatus" }
+            }
+          }
+        ],
+        "syntheticResult": "Listed 3 devices with dead hostStatus. Session variable 'lastDeviceListIds' contains [101,102,103]."
+      },
+      {
+        "userPrompt": "Go ahead and delete all of those dead devices.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "delete",
+              "applyToPrevious": { "contains": "lastDeviceListIds" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "multi-step-device-to-datasources",
+    "description": "Get a device by ID, then drill into its datasources using lm_device_data",
+    "category": "multi-step",
+    "tags": ["device", "get", "device_data", "list_datasources"],
+    "steps": [
+      {
+        "userPrompt": "Get me device 500 so I can check its configuration.",
+        "expected": [
+          {
+            "toolName": "lm_device",
+            "arguments": {
+              "operation": "get",
+              "id": 500
+            }
+          }
+        ],
+        "syntheticResult": "Retrieved device 500 'web-server-prod'. Device details stored in session."
+      },
+      {
+        "userPrompt": "Now show me the datasources on that device.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "list_datasources",
+              "deviceId": 500
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "multi-step-alert-triage",
+    "description": "List critical alerts, then acknowledge one with a comment",
+    "category": "multi-step",
+    "tags": ["alert", "list", "update", "ack"],
+    "steps": [
+      {
+        "userPrompt": "Show me all critical severity alerts that are currently active.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "severity" }
+            }
+          }
+        ],
+        "syntheticResult": "Listed 5 critical alerts. Alert IDs: [A1, A2, A3, A4, A5]. Session variable 'lastAlertListIds' contains those IDs."
+      },
+      {
+        "userPrompt": "Acknowledge alert A1 with the comment 'investigating the root cause'.",
+        "expected": [
+          {
+            "toolName": "lm_alert",
+            "arguments": {
+              "operation": "update",
+              "id": "A1",
+              "action": "ack",
+              "ackComment": { "contains": "investigating" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "multi-step-user-audit",
+    "description": "List all users for auditing, then drill into a specific user's details",
+    "category": "multi-step",
+    "tags": ["user", "list", "get", "audit"],
+    "steps": [
+      {
+        "userPrompt": "Give me a full list of all users for an access audit.",
+        "expected": [
+          {
+            "toolName": "lm_user",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ],
+        "syntheticResult": "Listed 20 users. Session variable 'lastUserListIds' contains all user IDs."
+      },
+      {
+        "userPrompt": "Let me look at user 55 in detail to check their permissions.",
+        "expected": [
+          {
+            "toolName": "lm_user",
+            "arguments": {
+              "operation": "get",
+              "id": 55
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

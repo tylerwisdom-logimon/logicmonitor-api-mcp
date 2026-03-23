@@ -8,56 +8,56 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 // Common schemas
 const widgetTokenSchema = z.object({
-  name: z.string(),
-  value: z.string()
+  name: z.string().describe('Token name used in widget configuration'),
+  value: z.string().describe('Token value to substitute')
 });
 
 const batchOptionsSchema = z.object({
-  maxConcurrent: z.number().min(1).max(50).optional(),
-  continueOnError: z.boolean().optional(),
-  dryRun: z.boolean().optional()
-}).optional();
+  maxConcurrent: z.number().min(1).max(50).optional().describe('Max parallel API requests (default 5)'),
+  continueOnError: z.boolean().optional().describe('If true, continue processing remaining items when one fails'),
+  dryRun: z.boolean().optional().describe('If true, validate inputs without executing the operation')
+}).optional().describe('Options for controlling batch operation behavior');
 
-// Single dashboard create schema
+// Single dashboard create schema — .loose() allows additional LM API fields not explicitly listed
 const singleDashboardSchema = z.object({
-  name: z.string(),
-  groupId: z.number(),
-  description: z.string().optional(),
-  widgetsConfig: z.string().optional(),
-  widgetTokens: z.array(widgetTokenSchema).optional(),
-  template: z.boolean().optional(),
-  sharable: z.boolean().optional()
+  name: z.string().describe('Display name of the dashboard'),
+  groupId: z.number().describe('ID of the dashboard group to place this dashboard in'),
+  description: z.string().optional().describe('Description of the dashboard'),
+  widgetsConfig: z.string().optional().describe('JSON string defining widget layout and configuration'),
+  widgetTokens: z.array(widgetTokenSchema).optional().describe('Array of token name/value pairs for dynamic widget content'),
+  template: z.boolean().optional().describe('If true, dashboard is a template that can be cloned'),
+  sharable: z.boolean().optional().describe('If true, dashboard can be shared with other users')
 }).loose();
 
-// List operation schema
+// List operation schema — .strict() rejects unknown parameters
 export const DashboardListArgsSchema = z.object({
-  operation: z.literal('list'),
-  filter: z.string().optional(),
-  size: z.number().min(1).max(1000).optional(),
-  offset: z.number().min(0).optional(),
-  fields: z.string().optional(),
-  autoPaginate: z.boolean().optional()
+  operation: z.literal('list').describe('The operation to perform'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/dashboard for valid field names.'),
+  size: z.number().min(1).max(1000).optional().describe('Items per page (default 50, max 1000)'),
+  offset: z.number().min(0).optional().describe('Number of items to skip for pagination (default 0)'),
+  fields: z.string().optional().describe('Comma-separated list of fields to return, e.g. "id,displayName"'),
+  autoPaginate: z.boolean().optional().describe('When true, automatically fetches all pages. Use cautiously on large result sets.')
 }).strict();
 
-// Get operation schema
+// Get operation schema — .strict() rejects unknown parameters
 export const DashboardGetArgsSchema = z.object({
-  operation: z.literal('get'),
-  id: z.number().optional(),
-  dashboardId: z.number().optional(),
-  fields: z.string().optional()
+  operation: z.literal('get').describe('The operation to perform'),
+  id: z.number().optional().describe('Dashboard ID (preferred). Alias: dashboardId'),
+  dashboardId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  fields: z.string().optional().describe('Comma-separated list of fields to return, e.g. "id,displayName"')
 }).strict();
 
-// Create operation schema
+// Create operation schema — .loose() allows additional LM API fields not explicitly listed
 export const DashboardCreateArgsSchema = z.object({
-  operation: z.literal('create'),
-  name: z.string().optional(),
-  groupId: z.number().optional(),
-  description: z.string().optional(),
-  widgetsConfig: z.string().optional(),
-  widgetTokens: z.array(widgetTokenSchema).optional(),
-  template: z.boolean().optional(),
-  sharable: z.boolean().optional(),
-  dashboards: z.array(singleDashboardSchema).min(1).optional(),
+  operation: z.literal('create').describe('The operation to perform'),
+  name: z.string().optional().describe('Display name of the dashboard (required for single create)'),
+  groupId: z.number().optional().describe('ID of the dashboard group (required for single create)'),
+  description: z.string().optional().describe('Description of the dashboard'),
+  widgetsConfig: z.string().optional().describe('JSON string defining widget layout and configuration'),
+  widgetTokens: z.array(widgetTokenSchema).optional().describe('Array of token name/value pairs for dynamic widget content'),
+  template: z.boolean().optional().describe('If true, dashboard is a template that can be cloned'),
+  sharable: z.boolean().optional().describe('If true, dashboard can be shared with other users'),
+  dashboards: z.array(singleDashboardSchema).min(1).optional().describe('Array of dashboard objects for batch creation'),
   batchOptions: batchOptionsSchema
 }).loose()
 .superRefine((data, ctx) => {
@@ -80,33 +80,33 @@ export const DashboardCreateArgsSchema = z.object({
   }
 });
 
-// Update operation schema
+// Update operation schema — .loose() allows additional LM API fields not explicitly listed
 export const DashboardUpdateArgsSchema = z.object({
-  operation: z.literal('update'),
-  id: z.number().optional(),
-  dashboardId: z.number().optional(),
-  name: z.string().optional(),
-  description: z.string().optional(),
-  widgetsConfig: z.string().optional(),
-  widgetTokens: z.array(widgetTokenSchema).optional(),
-  template: z.boolean().optional(),
-  sharable: z.boolean().optional(),
-  dashboards: z.array(z.any()).optional(),
-  updates: z.record(z.string(), z.any()).optional(),
-  applyToPrevious: z.string().optional(),
-  filter: z.string().optional(),
+  operation: z.literal('update').describe('The operation to perform'),
+  id: z.number().optional().describe('Dashboard ID (preferred). Alias: dashboardId'),
+  dashboardId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  name: z.string().optional().describe('Display name of the dashboard'),
+  description: z.string().optional().describe('Description of the dashboard'),
+  widgetsConfig: z.string().optional().describe('JSON string defining widget layout and configuration'),
+  widgetTokens: z.array(widgetTokenSchema).optional().describe('Array of token name/value pairs for dynamic widget content'),
+  template: z.boolean().optional().describe('If true, dashboard is a template that can be cloned'),
+  sharable: z.boolean().optional().describe('If true, dashboard can be shared with other users'),
+  dashboards: z.array(z.object({ id: z.number().optional().describe('Dashboard ID (preferred). Alias: dashboardId'), dashboardId: z.number().optional().describe('Alias for id. Prefer using id instead.') }).passthrough()).min(1).optional().describe('Array of dashboard objects for batch update'),
+  updates: z.record(z.string(), z.unknown()).optional().describe('Key-value pairs of fields to update across all targeted dashboards'),
+  applyToPrevious: z.string().optional().describe('Session variable name containing IDs from a prior list, e.g. "lastDeviceListIds". Use lm_session list to see available variables.'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/dashboard for valid field names.'),
   batchOptions: batchOptionsSchema
 }).loose();
 
-// Delete operation schema
+// Delete operation schema — .strict() rejects unknown parameters
 export const DashboardDeleteArgsSchema = z.object({
-  operation: z.literal('delete'),
-  id: z.number().optional(),
-  dashboardId: z.number().optional(),
-  ids: z.array(z.number()).optional(),
-  dashboards: z.array(z.any()).optional(),
-  applyToPrevious: z.string().optional(),
-  filter: z.string().optional(),
+  operation: z.literal('delete').describe('The operation to perform'),
+  id: z.number().optional().describe('Dashboard ID (preferred). Alias: dashboardId'),
+  dashboardId: z.number().optional().describe('Alias for id. Prefer using id instead.'),
+  ids: z.array(z.number()).optional().describe('Array of dashboard IDs to delete in batch'),
+  dashboards: z.array(z.object({ id: z.number().optional().describe('Dashboard ID (preferred). Alias: dashboardId'), dashboardId: z.number().optional().describe('Alias for id. Prefer using id instead.') }).passthrough()).min(1).optional().describe('Array of dashboard objects for batch deletion'),
+  applyToPrevious: z.string().optional().describe('Session variable name containing IDs from a prior list, e.g. "lastDeviceListIds". Use lm_session list to see available variables.'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/dashboard for valid field names.'),
   batchOptions: batchOptionsSchema
 }).strict();
 
@@ -138,4 +138,3 @@ export function validateDashboardOperation(args: unknown): DashboardOperationArg
   }
   return result.data;
 }
-

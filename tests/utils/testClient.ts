@@ -80,31 +80,38 @@ export class TestMCPClient {
       const content = (response.content || []) as Array<{ type: string; text: string }>;
       let data: unknown = undefined;
 
+      // Try all content blocks for JSON data (compact responses put summary first, payload second)
+      const payloadPrefix = 'Full LogicMonitor payload:\n';
       for (const block of content) {
         if (block.type !== 'text' || typeof block.text !== 'string') continue;
         if (!block.text.trim()) continue;
 
-        // Try direct JSON parse first
+        // Try direct JSON parse
         try {
           data = JSON.parse(block.text);
           break;
-        } catch {
-          // buildToolResponse wraps JSON as "Full LogicMonitor payload:\n{...}"
-          const payloadPrefix = 'Full LogicMonitor payload:\n';
-          if (block.text.startsWith(payloadPrefix)) {
-            try {
-              data = JSON.parse(block.text.slice(payloadPrefix.length));
-              break;
-            } catch { /* not JSON payload */ }
-          }
-          if (typeof data === 'undefined') {
-            data = block.text;
-          }
+        } catch { /* not raw JSON */ }
+
+        // Try "Full LogicMonitor payload:\n{...}" format
+        if (block.text.startsWith(payloadPrefix)) {
+          try {
+            data = JSON.parse(block.text.slice(payloadPrefix.length));
+            break;
+          } catch { /* not JSON payload */ }
         }
       }
 
-      if (typeof data === 'undefined' && content.length > 0 && content[0].type === 'text') {
-        data = content[0].text;
+      // For compact responses (tables, summaries), no JSON block exists.
+      // Recover the full OperationResult from session's lastResults so tests
+      // can assert on item structure and field presence.
+      if (data === undefined || typeof data === 'string') {
+        const toolResult = this.getToolResult(toolName);
+        if (toolResult) {
+          data = toolResult;
+        } else {
+          // Final fallback: use raw text
+          data = content[0]?.text;
+        }
       }
 
       // Extract error message from isError responses
@@ -157,6 +164,17 @@ export class TestMCPClient {
    */
   setSessionVariable(key: string, value: unknown) {
     return this.sessionManager.setVariable(this.sessionId, key, value);
+  }
+
+  /**
+   * Get the OperationResult for a specific tool from session lastResults.
+   * This contains the full items/data regardless of response formatting.
+   */
+  private getToolResult(toolName: string): Record<string, unknown> | null {
+    const context = this.sessionManager.getContext(this.sessionId);
+    if (!context?.lastResults) return null;
+
+    return context.lastResults[toolName] as Record<string, unknown> ?? null;
   }
 
   /**

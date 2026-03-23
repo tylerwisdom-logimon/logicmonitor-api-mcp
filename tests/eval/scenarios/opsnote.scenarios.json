@@ -1,0 +1,103 @@
+[
+  {
+    "id": "opsnote-list-recent",
+    "description": "List recent ops notes should route to lm_opsnote",
+    "category": "tool-selection",
+    "tags": ["opsnote", "list"],
+    "steps": [
+      {
+        "userPrompt": "Show me all recent operational notes in our LogicMonitor portal.",
+        "expected": [
+          {
+            "toolName": "lm_opsnote",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "opsnote-create-deployment",
+    "description": "Create a deployment note with tags",
+    "category": "parameter-mapping",
+    "tags": ["opsnote", "create", "tags"],
+    "steps": [
+      {
+        "userPrompt": "Create an ops note documenting that we deployed version 3.2.1 to production. Tag it as 'deployment' and 'production'.",
+        "expected": [
+          {
+            "toolName": "lm_opsnote",
+            "arguments": {
+              "operation": "create",
+              "note": { "contains": "3.2.1" },
+              "tags": { "present": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "opsnote-list-by-tag",
+    "description": "List ops notes filtered by tag",
+    "category": "parameter-mapping",
+    "tags": ["opsnote", "list", "filter"],
+    "steps": [
+      {
+        "userPrompt": "Find all ops notes tagged with 'deployment'.",
+        "expected": [
+          {
+            "toolName": "lm_opsnote",
+            "arguments": {
+              "operation": "list",
+              "filter": { "contains": "deployment" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "opsnote-update",
+    "description": "Update an existing ops note",
+    "category": "parameter-mapping",
+    "tags": ["opsnote", "update"],
+    "steps": [
+      {
+        "userPrompt": "Update ops note ABC123 to say 'Deployment rolled back due to performance regression'.",
+        "expected": [
+          {
+            "toolName": "lm_opsnote",
+            "arguments": {
+              "operation": "update",
+              "id": "ABC123",
+              "note": { "contains": "rolled back" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "opsnote-delete",
+    "description": "Delete an ops note by ID",
+    "category": "parameter-mapping",
+    "tags": ["opsnote", "delete"],
+    "steps": [
+      {
+        "userPrompt": "Delete ops note XYZ789, it was created by mistake.",
+        "expected": [
+          {
+            "toolName": "lm_opsnote",
+            "arguments": {
+              "operation": "delete",
+              "id": "XYZ789"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -438,6 +438,44 @@ export interface LMDeviceDatasourceInstance {
   }>;
 }
 
+export interface LMSDT {
+  id: string;
+  type: string;
+  sdtType?: string;
+  startDateTime?: number;
+  endDateTime?: number;
+  startDateTimeOnLocal?: string;
+  endDateTimeOnLocal?: string;
+  duration?: number;
+  timezone?: string;
+  comment?: string;
+  isEffective?: boolean;
+  admin?: string;
+  hour?: number;
+  minute?: number;
+  endHour?: number;
+  endMinute?: number;
+  weekDay?: string;
+  monthDay?: number;
+  weekOfMonth?: string;
+  deviceId?: number;
+  deviceGroupId?: number;
+  deviceDataSourceId?: number;
+  dataSourceId?: number;
+  websiteId?: number;
+  websiteGroupId?: number;
+  collectorId?: number;
+}
+
+export interface LMOpsNote {
+  id: string;
+  note: string;
+  createdBy?: string;
+  happenOnInSec?: number;
+  scopes?: Array<{ type: string }>;
+  tags?: Array<{ id?: string; name: string; createdOnInSec?: number; updateOnInSec?: number }>;
+}
+
 export interface LMDeviceData {
   time: number[];
   values: number[][];

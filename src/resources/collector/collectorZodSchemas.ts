@@ -6,14 +6,14 @@
 import { z } from 'zod';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
-// List operation schema - matches Joi validation exactly
+// List operation schema — .strict() rejects unknown parameters
 export const CollectorListArgsSchema = z.object({
-  operation: z.literal('list'),
-  filter: z.string().optional(),
-  size: z.number().min(1).max(1000).optional(),
-  offset: z.number().min(0).optional(),
-  fields: z.string().optional(),
-  autoPaginate: z.boolean().optional()
+  operation: z.literal('list').describe('The operation to perform'),
+  filter: z.string().optional().describe('LM filter expression, e.g. "displayName:*prod*". See health://logicmonitor/fields/collector for valid field names.'),
+  size: z.number().min(1).max(1000).optional().describe('Items per page (default 50, max 1000)'),
+  offset: z.number().min(0).optional().describe('Number of items to skip for pagination (default 0)'),
+  fields: z.string().optional().describe('Comma-separated list of fields to return, e.g. "id,displayName"'),
+  autoPaginate: z.boolean().optional().describe('When true, automatically fetches all pages. Use cautiously on large result sets.')
 }).strict();
 
 // Collector only supports list operation (read-only)
@@ -34,4 +34,3 @@ export function validateListCollectors(args: unknown) {
   }
   return result.data;
 }
-

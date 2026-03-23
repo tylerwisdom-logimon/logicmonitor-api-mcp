@@ -7,7 +7,6 @@ import { ResourceHandler } from '../base/resourceHandler.js';
 import { BatchOperationResolver } from '../base/batchResolver.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import { throwBatchFailure } from '../../utils/batchUtils.js';
 import type { LMWebsite } from '../../types/logicmonitor.js';
 import type {
@@ -16,8 +15,7 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
-  OperationResult,
-  OperationType
+  OperationResult
 } from '../../types/operations.js';
 import {
   validateListWebsites,
@@ -31,7 +29,16 @@ import { getWebsiteLink } from '../../utils/resourceLinks.js';
 export class WebsiteHandler extends ResourceHandler<LMWebsite> {
   constructor(client: LogicMonitorClient, sessionManager: SessionManager, sessionId?: string) {
     super(
-      { resourceType: 'website', resourceName: 'website', idField: 'id' },
+      {
+        resourceType: 'website',
+        resourceName: 'website',
+        idField: 'id',
+        pluralKey: 'websites',
+        linkBuilder: (account, resource) => {
+          const id = resource.id ?? resource.websiteId;
+          return id != null ? getWebsiteLink({ company: account, websiteId: id as number | string }) : undefined;
+        }
+      },
       client,
       sessionManager,
       sessionId
@@ -41,11 +48,7 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMWebsite>> {
     const validated = validateListWebsites(args);
     const { fields, filter, size, offset, autoPaginate, collectorIds } = validated;
-    const fieldConfig = sanitizeFields('website', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown website field(s): ${fieldConfig.invalid.join(', ')}`);
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listWebsites({
       fields: fieldConfig.fieldsParam,
@@ -64,25 +67,20 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'list', result);
+    this.recordAndStore('list', result);
     return result;
   }
 
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMWebsite>> {
     const validated = validateGetWebsite(args);
     const websiteId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof websiteId !== 'number') {
       throw new McpError(ErrorCode.InvalidParams, 'Website ID must be a number');
     }
 
     const { fields } = validated;
-    const fieldConfig = sanitizeFields('website', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(ErrorCode.InvalidParams, `Unknown website field(s): ${fieldConfig.invalid.join(', ')}`);
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.getWebsite(websiteId, {
       fields: fieldConfig.fieldsParam
@@ -95,25 +93,21 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('get', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'get', result);
+    this.recordAndStore('get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'website', websiteId, apiResult.data);
     return result;
   }
 
   protected async handleCreate(args: CreateOperationArgs): Promise<OperationResult<LMWebsite>> {
     const validated = validateCreateWebsite(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isBatch = !!((validated as any).websites && Array.isArray((validated as any).websites));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const batchOptions = BatchOperationResolver.extractBatchOptions(validated as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const websitesInput = isBatch ? (validated as any).websites : [validated];
+    const validatedRecord = validated as Record<string, unknown>;
+    const isBatch = this.isBatchCreate(validatedRecord);
+    const batchOptions = BatchOperationResolver.extractBatchOptions(validatedRecord);
+    const websitesInput = this.normalizeCreateInput(validatedRecord);
 
     const batchResult = await this.processBatch(
       websitesInput,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (website: Record<string, unknown>) => this.client.createWebsite(website as any),
+      async (website: Record<string, unknown>) => this.client.createWebsite(website as Parameters<LogicMonitorClient['createWebsite']>[0]),
       {
         maxConcurrent: batchOptions.maxConcurrent || 5,
         continueOnError: batchOptions.continueOnError ?? true,
@@ -134,8 +128,7 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
         meta: entry.meta
       };
 
-      this.storeInSession('create', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'create', result);
+      this.recordAndStore('create', result);
       return result;
     }
 
@@ -147,16 +140,14 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
       results: batchResult.results
     };
 
-    this.storeInSession('create', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'create', result);
+    this.recordAndStore('create', result);
     return result;
   }
 
   protected async handleUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMWebsite>> {
     const validated = validateUpdateWebsite(args);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (BatchOperationResolver.isBatchOperation(validated as any, 'websites')) {
+    if (BatchOperationResolver.isBatchOperation(validated, 'websites')) {
       return this.handleBatchUpdate(validated);
     }
 
@@ -165,8 +156,7 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
       throw new McpError(ErrorCode.InvalidParams, 'Website ID must be a number');
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { id: _id, operation: _operation, updates: _updateData, applyToPrevious: _applyToPrevious, filter: _filter, batchOptions: _batchOptions, ...rest } = validated as any;
+    const { id: _id, operation: _operation, updates: _updateData, applyToPrevious: _applyToPrevious, filter: _filter, batchOptions: _batchOptions, ...rest } = validated as Record<string, unknown>;
     const apiResult = await this.client.updateWebsite(websiteId, rest);
 
     const result: OperationResult<LMWebsite> = {
@@ -176,16 +166,14 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
       meta: apiResult.meta
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'update', result);
+    this.recordAndStore('update', result);
     return result;
   }
 
   protected async handleDelete(args: DeleteOperationArgs): Promise<OperationResult<LMWebsite>> {
     const validated = validateDeleteWebsite(args);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (BatchOperationResolver.isBatchOperation(validated as any, 'websites')) {
+    if (BatchOperationResolver.isBatchOperation(validated, 'websites')) {
       return this.handleBatchDelete(validated);
     }
 
@@ -198,21 +186,18 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
 
     const result: OperationResult<LMWebsite> = {
       success: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data: { websiteId } as any,
+      data: { websiteId } as unknown as LMWebsite,
       raw: apiResult.raw,
       meta: apiResult.meta
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'delete', result);
+    this.recordAndStore('delete', result);
     return result;
   }
 
   private async handleBatchUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMWebsite>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolution = await BatchOperationResolver.resolveItems<any>(
+    const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
       args,
       this.sessionContext,
       this.client,
@@ -222,9 +207,10 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
 
     BatchOperationResolver.validateBatchSafety(resolution, 'update');
 
+    const globalUpdates = (args.updates || {}) as Record<string, unknown>;
     const updateOps = resolution.items.map(item => ({
-      websiteId: item.id || item.websiteId,
-      updates: args.updates || item
+      websiteId: (item.id || item.websiteId) as number,
+      updates: { ...item, ...globalUpdates }
     }));
 
     const batchResult = await this.processBatch(
@@ -244,15 +230,13 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
       results: batchResult.results
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'update', result);
+    this.recordAndStore('update', result);
     return result;
   }
 
   private async handleBatchDelete(args: DeleteOperationArgs): Promise<OperationResult<LMWebsite>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolution = await BatchOperationResolver.resolveItems<any>(
+    const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
       args,
       this.sessionContext,
       this.client,
@@ -263,7 +247,7 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
     BatchOperationResolver.validateBatchSafety(resolution, 'delete');
 
     const deleteOps = resolution.items.map(item => ({
-      websiteId: item.id || item.websiteId
+      websiteId: (item.id || item.websiteId) as number
     }));
 
     const batchResult = await this.processBatch(
@@ -279,47 +263,11 @@ export class WebsiteHandler extends ResourceHandler<LMWebsite> {
     const result: OperationResult<LMWebsite> = {
       success: batchResult.success,
       summary: batchResult.summary,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      results: batchResult.results as any
+      results: batchResult.results as OperationResult<LMWebsite>['results']
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'website', 'delete', result);
+    this.recordAndStore('delete', result);
     return result;
   }
 
-  protected override enhanceResult(operation: OperationType, result: OperationResult<LMWebsite>): void {
-    super.enhanceResult(operation, result);
-    this.attachWebsiteLinks(result);
-  }
-
-  private attachWebsiteLinks(result: OperationResult<LMWebsite>): void {
-    if (result.data) {
-      this.addLinkToWebsite(result.data as unknown as Record<string, unknown>);
-    }
-    if (Array.isArray(result.items)) {
-      result.items.forEach(item =>
-        this.addLinkToWebsite(item as unknown as Record<string, unknown>)
-      );
-    }
-  }
-
-  private addLinkToWebsite(website: Record<string, unknown> | undefined): void {
-    if (!website) {
-      return;
-    }
-    try {
-      const websiteId = website.id ?? website.websiteId;
-      if (websiteId === null || typeof websiteId === 'undefined') {
-        return;
-      }
-      website.linkUrl = getWebsiteLink({
-        company: this.client.getAccount(),
-        websiteId: websiteId as number | string
-      });
-    } catch {
-      // Ignore failures so we never block the primary response
-    }
-  }
 }
-

@@ -109,22 +109,3 @@ function needsQuoting(value: string): boolean {
   // Quote ALL string values - LogicMonitor API requires string values to be quoted
   return true;
 }
-
-// Common filter patterns for documentation
-export const FILTER_EXAMPLES = {
-  devices: [
-    'displayName:"*prod*"',
-    'hostStatus:"alive"',
-    'displayName:"web*",hostStatus:"alive"', // AND with comma
-    'name:"web*"||name:"app*"', // OR with ||
-    'id>:100', // Greater than or equal
-    'disableAlerting:false',
-    'hostStatus:"active"|"pending"' // Multiple values with |
-  ],
-  deviceGroups: [
-    'name:"*servers*"',
-    'parentId:1',
-    'name:"production*"',
-    'name~"test"' // Contains
-  ]
-};

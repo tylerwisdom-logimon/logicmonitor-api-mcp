@@ -7,7 +7,6 @@ import { ResourceHandler } from '../base/resourceHandler.js';
 import { BatchOperationResolver } from '../base/batchResolver.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import { throwBatchFailure } from '../../utils/batchUtils.js';
 import type { LMDeviceGroup } from '../../types/logicmonitor.js';
 import type {
@@ -36,7 +35,8 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       {
         resourceType: 'deviceGroup',
         resourceName: 'deviceGroup',
-        idField: 'id'
+        idField: 'id',
+        pluralKey: 'groups'
       },
       client,
       sessionManager,
@@ -47,14 +47,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMDeviceGroup>> {
     const validated = validateListDeviceGroups(args);
     const { fields, filter, size, offset, autoPaginate } = validated;
-    const fieldConfig = sanitizeFields('deviceGroup', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown device group field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listDeviceGroups({
       fields: fieldConfig.fieldsParam,
@@ -78,8 +71,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'list', result);
+    this.recordAndStore('list', result);
 
     return result;
   }
@@ -87,20 +79,13 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMDeviceGroup>> {
     const validated = validateGetDeviceGroup(args);
     const groupId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof groupId !== 'number') {
       throw new McpError(ErrorCode.InvalidParams, 'Device group ID must be a number');
     }
 
     const { fields } = validated;
-    const fieldConfig = sanitizeFields('deviceGroup', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown device group field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.getDeviceGroup(groupId, {
       fields: fieldConfig.fieldsParam
@@ -117,8 +102,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('get', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'get', result);
+    this.recordAndStore('get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'deviceGroup', groupId, apiResult.data);
 
     return result;
@@ -126,17 +110,14 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
 
   protected async handleCreate(args: CreateOperationArgs): Promise<OperationResult<LMDeviceGroup>> {
     const validated = validateCreateDeviceGroup(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const isBatch = !!((validated as any).groups && Array.isArray((validated as any).groups));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const batchOptions = BatchOperationResolver.extractBatchOptions(validated as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const groupsInput = isBatch ? (validated as any).groups : [validated];
+    const validatedRecord = validated as Record<string, unknown>;
+    const isBatch = this.isBatchCreate(validatedRecord);
+    const batchOptions = BatchOperationResolver.extractBatchOptions(validatedRecord);
+    const groupsInput = this.normalizeCreateInput(validatedRecord);
 
     const batchResult = await this.processBatch(
       groupsInput,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (group: Record<string, unknown>) => this.client.createDeviceGroup(group as any),
+      async (group: Record<string, unknown>) => this.client.createDeviceGroup(group as Parameters<LogicMonitorClient['createDeviceGroup']>[0]),
       {
         maxConcurrent: batchOptions.maxConcurrent || 5,
         continueOnError: batchOptions.continueOnError ?? true,
@@ -157,14 +138,13 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
         meta: entry.meta
       };
 
-      this.storeInSession('create', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'create', result);
+      this.recordAndStore('create', result);
 
       return result;
     }
 
     const successful = batchResult.results.filter(r => r.success && r.data);
-    
+
     const result: OperationResult<LMDeviceGroup> = {
       success: batchResult.success,
       items: successful.map(r => r.data as LMDeviceGroup),
@@ -172,8 +152,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       results: batchResult.results
     };
 
-    this.storeInSession('create', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'create', result);
+    this.recordAndStore('create', result);
 
     return result;
   }
@@ -200,8 +179,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       meta: apiResult.meta
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'update', result);
+    this.recordAndStore('update', result);
 
     return result;
   }
@@ -209,8 +187,7 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
   protected async handleDelete(args: DeleteOperationArgs): Promise<OperationResult<LMDeviceGroup>> {
     const validated = validateDeleteDeviceGroup(args);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (BatchOperationResolver.isBatchOperation(validated as any, 'groups')) {
+    if (BatchOperationResolver.isBatchOperation(validated, 'groups')) {
       return this.handleBatchDelete(validated);
     }
 
@@ -219,29 +196,26 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       throw new McpError(ErrorCode.InvalidParams, 'Device group ID must be a number');
     }
 
+    const deleteChildren = (validated as Record<string, unknown>).deleteChildren as boolean ?? false;
     const apiResult = await this.client.deleteDeviceGroup(groupId, {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      deleteChildren: (validated as any).deleteChildren ?? false
+      deleteChildren
     });
 
     const result: OperationResult<LMDeviceGroup> = {
       success: true,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data: { groupId, deleteChildren: (validated as any).deleteChildren ?? false } as any,
+      data: { groupId, deleteChildren } as unknown as LMDeviceGroup,
       raw: apiResult.raw,
       meta: apiResult.meta
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'delete', result);
+    this.recordAndStore('delete', result);
 
     return result;
   }
 
   private async handleBatchUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMDeviceGroup>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolution = await BatchOperationResolver.resolveItems<any>(
+    const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
       args,
       this.sessionContext,
       this.client,
@@ -251,9 +225,10 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
 
     BatchOperationResolver.validateBatchSafety(resolution, 'update');
 
+    const globalUpdates = (args.updates || {}) as Record<string, unknown>;
     const updateOps = resolution.items.map(item => ({
-      groupId: item.id || item.groupId,
-      updates: args.updates || item
+      groupId: (item.id || item.groupId) as number,
+      updates: { ...item, ...globalUpdates }
     }));
 
     const batchResult = await this.processBatch(
@@ -273,16 +248,14 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
       results: batchResult.results
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'update', result);
+    this.recordAndStore('update', result);
 
     return result;
   }
 
   private async handleBatchDelete(args: DeleteOperationArgs): Promise<OperationResult<LMDeviceGroup>> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(args);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const resolution = await BatchOperationResolver.resolveItems<any>(
+    const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
       args,
       this.sessionContext,
       this.client,
@@ -293,9 +266,8 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
     BatchOperationResolver.validateBatchSafety(resolution, 'delete');
 
     const deleteOps = resolution.items.map(item => ({
-      groupId: item.id || item.groupId,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      deleteChildren: (args as any).deleteChildren ?? false
+      groupId: (item.id || item.groupId) as number,
+      deleteChildren: (args as Record<string, unknown>).deleteChildren as boolean ?? false
     }));
 
     const batchResult = await this.processBatch(
@@ -311,14 +283,11 @@ export class DeviceGroupHandler extends ResourceHandler<LMDeviceGroup> {
     const result: OperationResult<LMDeviceGroup> = {
       success: batchResult.success,
       summary: batchResult.summary,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      results: batchResult.results as any
+      results: batchResult.results as OperationResult<LMDeviceGroup>['results']
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'deviceGroup', 'delete', result);
+    this.recordAndStore('delete', result);
 
     return result;
   }
 }
-

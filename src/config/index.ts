@@ -27,7 +27,7 @@ function parseJSON<T>(value: string | undefined, defaultValue: T): T {
   try {
     return JSON.parse(value) as T;
   } catch (error) {
-    throw new Error(`Failed to parse JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Failed to parse JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 
@@ -115,7 +115,7 @@ export function loadConfig(): Config {
         return `  - ${path}: ${err.message}`;
       }).join('\n');
       
-      throw new Error(`Configuration validation failed:\n${errorMessages}`);
+      throw new Error(`Configuration validation failed:\n${errorMessages}`, { cause: error });
     }
     throw error;
   }

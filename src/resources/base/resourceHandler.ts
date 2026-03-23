@@ -7,7 +7,8 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager, SessionContext } from '../../session/sessionManager.js';
 import { capitalizeFirst } from '../../utils/strings.js';
-import { batchProcessor, type BatchOptions, type BatchResult, type BatchDiagnostics } from '../../utils/batchProcessor.js';
+import { sanitizeFields } from '../../utils/fieldMetadata.js';
+import { batchProcessor, type BatchOptions, type BatchResult, type BatchItem, type BatchDiagnostics } from '../../utils/batchProcessor.js';
 import type { LogicMonitorResponseMeta } from '../../api/client.js';
 import type {
   ResourceType,
@@ -25,6 +26,10 @@ export interface ResourceHandlerConfig {
   resourceType: ResourceType;
   resourceName: string;
   idField: string;
+  /** Plural key for batch array inputs (e.g., 'devices', 'groups', 'users') */
+  pluralKey?: string;
+  /** Optional link builder for attaching portal URLs to results */
+  linkBuilder?: (account: string, resource: Record<string, unknown>) => string | undefined;
 }
 
 export abstract class ResourceHandler<T = unknown> {
@@ -96,10 +101,19 @@ export abstract class ResourceHandler<T = unknown> {
   }
 
   /**
-   * Main entry point for handling operations
+   * Main entry point for handling operations.
+   * Subclasses can override handleCustomOperation() to handle non-standard
+   * operations (e.g. list_datasources, get_data) while still benefiting
+   * from applyEnhancements for the standard CRUD path.
    */
   async handleOperation(args: BaseOperationArgs): Promise<OperationResult<T>> {
     const { operation } = args;
+
+    // Allow subclasses to handle custom operations first
+    const customResult = await this.handleCustomOperation(operation, args);
+    if (customResult !== null) {
+      return this.applyEnhancements(operation as OperationType, customResult);
+    }
 
     switch (operation) {
       case 'list':
@@ -120,6 +134,17 @@ export abstract class ResourceHandler<T = unknown> {
     }
   }
 
+  /**
+   * Override in subclasses to handle non-standard operations.
+   * Return null to fall through to standard CRUD routing.
+   */
+  protected async handleCustomOperation(
+    _operation: string,
+    _args: BaseOperationArgs
+  ): Promise<OperationResult<T> | null> {
+    return null;
+  }
+
   private applyEnhancements(
     operation: OperationType,
     result: OperationResult<T>
@@ -137,9 +162,19 @@ export abstract class ResourceHandler<T = unknown> {
   protected abstract handleUpdate(args: UpdateOperationArgs): Promise<OperationResult<T>>;
   protected abstract handleDelete(args: DeleteOperationArgs): Promise<OperationResult<T>>;
 
-  protected enhanceResult(operation: OperationType, result: OperationResult<T>): void {
-    void operation;
-    void result;
+  protected enhanceResult(_operation: OperationType, result: OperationResult<T>): void {
+    if (!this.config.linkBuilder || !this._client) return;
+    const account = this._client.getAccount();
+    const attach = (item: Record<string, unknown>) => {
+      try {
+        const url = this.config.linkBuilder?.(account, item);
+        if (url) item.linkUrl = url;
+      } catch {
+        // Link generation is non-critical
+      }
+    };
+    if (result.data) attach(result.data as unknown as Record<string, unknown>);
+    if (result.items) result.items.forEach(i => attach(i as unknown as Record<string, unknown>));
   }
 
   /**
@@ -175,6 +210,80 @@ export abstract class ResourceHandler<T = unknown> {
       ErrorCode.InvalidParams,
       `No ${this.config.resourceName} ID provided and no recent ${this.config.resourceName} found in session context. Please provide an 'id' parameter.`
     );
+  }
+
+  // ── Common helpers ──────────────────────────────────────────────────
+
+  /**
+   * Validate and sanitize field selections for this resource type.
+   * Throws McpError if unknown fields are requested.
+   */
+  protected validateFields(fields?: string) {
+    const fieldConfig = sanitizeFields(this.config.resourceType as Parameters<typeof sanitizeFields>[0], fields);
+    if (fieldConfig.invalid.length > 0) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unknown ${this.config.resourceName} field(s): ${fieldConfig.invalid.join(', ')}`
+      );
+    }
+    return fieldConfig;
+  }
+
+  /**
+   * Store result in session AND record the operation in one call.
+   */
+  protected recordAndStore(operation: OperationType | string, result: OperationResult<T>): void {
+    this.storeInSession(operation as OperationType, result);
+    this.sessionManager.recordOperation(
+      this.sessionContext.id, this.config.resourceType, operation as OperationType, result
+    );
+  }
+
+  /**
+   * Passthrough normalization of batch results into a consistent array.
+   */
+  protected normalizeBatchResults(batch: BatchResult<T>): Array<BatchItem<T>> {
+    return batch.results.map(entry => ({
+      index: entry.index,
+      success: entry.success,
+      data: entry.data,
+      error: entry.error,
+      diagnostics: entry.diagnostics,
+      meta: entry.meta,
+      raw: entry.raw
+    }));
+  }
+
+  /**
+   * Extract the data from successful batch entries.
+   */
+  protected extractSuccessfulItems(results: Array<BatchItem<T>>): T[] {
+    return results
+      .filter((entry): entry is typeof entry & { data: T } => entry.success && entry.data !== undefined)
+      .map(entry => entry.data);
+  }
+
+  /**
+   * Check if the args contain a batch create array (using the configured pluralKey).
+   */
+  protected isBatchCreate(args: Record<string, unknown>): boolean {
+    const key = this.config.pluralKey;
+    return !!(key && args[key] && Array.isArray(args[key]));
+  }
+
+  /**
+   * Normalize create input into an array of payloads.
+   * Uses the configured pluralKey to detect batch arrays.
+   */
+  protected normalizeCreateInput(args: Record<string, unknown>): Array<Record<string, unknown>> {
+    const key = this.config.pluralKey;
+    if (key && args[key] && Array.isArray(args[key])) {
+      return args[key] as Array<Record<string, unknown>>;
+    }
+    const single = { ...args };
+    delete single.operation;
+    delete single.batchOptions;
+    return [single];
   }
 
   /**

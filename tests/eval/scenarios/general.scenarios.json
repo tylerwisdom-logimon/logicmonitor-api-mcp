@@ -1,0 +1,236 @@
+[
+  {
+    "id": "general-user-list",
+    "description": "Ambiguous 'users' request should route to lm_user, not lm_device or lm_session",
+    "category": "tool-selection",
+    "tags": ["user", "list"],
+    "steps": [
+      {
+        "userPrompt": "Show me all the users in the portal.",
+        "expected": [
+          {
+            "toolName": "lm_user",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-collector-list",
+    "description": "Question about installed collectors should select lm_collector, not lm_collector_group",
+    "category": "tool-selection",
+    "tags": ["collector", "list"],
+    "steps": [
+      {
+        "userPrompt": "What collectors are currently installed in our environment?",
+        "expected": [
+          {
+            "toolName": "lm_collector",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-dashboard-get",
+    "description": "Fetch a specific dashboard by numeric ID",
+    "category": "tool-selection",
+    "tags": ["dashboard", "get"],
+    "steps": [
+      {
+        "userPrompt": "Get dashboard 42 for me.",
+        "expected": [
+          {
+            "toolName": "lm_dashboard",
+            "arguments": {
+              "operation": "get",
+              "id": 42
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-website-status",
+    "description": "Checking website monitoring status should pick lm_website, not lm_website_group or lm_alert",
+    "category": "tool-selection",
+    "tags": ["website", "list"],
+    "steps": [
+      {
+        "userPrompt": "Check the status of our website monitoring — what sites are being watched?",
+        "expected": [
+          {
+            "toolName": "lm_website",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-device-group-create",
+    "description": "Creating a device group should use lm_device_group, not lm_device",
+    "category": "tool-selection",
+    "tags": ["device_group", "create"],
+    "steps": [
+      {
+        "userPrompt": "Create a new device group called Production under the root group.",
+        "expected": [
+          {
+            "toolName": "lm_device_group",
+            "arguments": {
+              "operation": "create",
+              "name": { "contains": "Production" },
+              "parentId": { "present": true }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-collector-group-list",
+    "description": "Asking about collector group assignments should pick lm_collector_group, not lm_collector",
+    "category": "tool-selection",
+    "tags": ["collector_group", "list"],
+    "steps": [
+      {
+        "userPrompt": "Show me the collector group assignments so I can see how collectors are organized.",
+        "expected": [
+          {
+            "toolName": "lm_collector_group",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-website-group-list",
+    "description": "Asking about website groups should use lm_website_group, not lm_website",
+    "category": "tool-selection",
+    "tags": ["website_group", "list"],
+    "steps": [
+      {
+        "userPrompt": "I need to see how the website groups are set up — list them for me.",
+        "expected": [
+          {
+            "toolName": "lm_website_group",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-user-delete",
+    "description": "Deleting a user by ID should use lm_user delete with the correct id parameter",
+    "category": "tool-selection",
+    "tags": ["user", "delete"],
+    "steps": [
+      {
+        "userPrompt": "Delete user 99 from the system.",
+        "expected": [
+          {
+            "toolName": "lm_user",
+            "arguments": {
+              "operation": "delete",
+              "id": 99
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-session-inspect",
+    "description": "Asking about session state should select lm_session, not any resource tool",
+    "category": "tool-selection",
+    "tags": ["session", "list"],
+    "steps": [
+      {
+        "userPrompt": "What's in my session right now? I want to see what variables I have stored.",
+        "expected": [
+          {
+            "toolName": "lm_session",
+            "arguments": {
+              "operation": { "oneOf": ["list", "get"] }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-dashboard-update",
+    "description": "Updating a dashboard name by ID should use lm_dashboard update with correct parameters",
+    "category": "tool-selection",
+    "tags": ["dashboard", "update"],
+    "steps": [
+      {
+        "userPrompt": "Update dashboard 15 and change its name to 'Prod Overview'.",
+        "expected": [
+          {
+            "toolName": "lm_dashboard",
+            "arguments": {
+              "operation": "update",
+              "id": 15,
+              "name": "Prod Overview"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-sdt-list",
+    "description": "Question about maintenance windows should select lm_sdt, not lm_device or lm_alert",
+    "category": "tool-selection",
+    "tags": ["sdt", "list"],
+    "steps": [
+      {
+        "userPrompt": "Are there any scheduled downtimes or maintenance windows active right now?",
+        "expected": [
+          {
+            "toolName": "lm_sdt",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "general-opsnote-list",
+    "description": "Question about operational notes should select lm_opsnote",
+    "category": "tool-selection",
+    "tags": ["opsnote", "list"],
+    "steps": [
+      {
+        "userPrompt": "Show me the recent ops notes and change logs in LogicMonitor.",
+        "expected": [
+          {
+            "toolName": "lm_opsnote",
+            "arguments": {
+              "operation": "list"
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

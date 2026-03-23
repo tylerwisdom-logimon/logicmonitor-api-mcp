@@ -1,0 +1,108 @@
+[
+  {
+    "id": "device-data-list-datasources",
+    "description": "List datasources on a device uses the non-standard 'list_datasources' operation",
+    "category": "operation-selection",
+    "tags": ["device_data", "list_datasources"],
+    "steps": [
+      {
+        "userPrompt": "Show me all the datasources configured on device 100.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "list_datasources",
+              "deviceId": 100
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-data-list-instances",
+    "description": "Listing instances requires both deviceId and datasourceId",
+    "category": "parameter-extraction",
+    "tags": ["device_data", "list_instances"],
+    "steps": [
+      {
+        "userPrompt": "List all the instances for datasource 5 on device 100.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "list_instances",
+              "deviceId": 100,
+              "datasourceId": 5
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-data-get-data-basic",
+    "description": "Retrieving performance data uses the non-standard 'get_data' operation with required IDs",
+    "category": "operation-selection",
+    "tags": ["device_data", "get_data"],
+    "steps": [
+      {
+        "userPrompt": "Pull the performance data for device 200, datasource 10, instance 3.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "get_data",
+              "deviceId": 200,
+              "datasourceId": 10,
+              "instanceId": 3
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-data-datasource-filter",
+    "description": "Filtering datasources by name pattern should use datasourceIncludeFilter, not the generic filter param",
+    "category": "parameter-extraction",
+    "tags": ["device_data", "list_datasources", "filter"],
+    "steps": [
+      {
+        "userPrompt": "What CPU-related metrics are available on device 50? I only care about datasources with CPU in the name.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "list_datasources",
+              "deviceId": 50,
+              "datasourceIncludeFilter": { "contains": "CPU" }
+            }
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "device-data-get-data-multiple-instances",
+    "description": "Requesting data for multiple instances should use instanceIds array and specify a time range",
+    "category": "parameter-extraction",
+    "tags": ["device_data", "get_data", "batch"],
+    "steps": [
+      {
+        "userPrompt": "Pull the last 24 hours of data for device 300, datasource 15, instances 1 and 2.",
+        "expected": [
+          {
+            "toolName": "lm_device_data",
+            "arguments": {
+              "operation": "get_data",
+              "deviceId": 300,
+              "datasourceId": 15,
+              "instanceIds": { "present": true }
+            }
+          }
+        ]
+      }
+    ]
+  }
+]

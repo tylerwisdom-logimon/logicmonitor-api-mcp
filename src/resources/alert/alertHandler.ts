@@ -6,7 +6,6 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { ResourceHandler } from '../base/resourceHandler.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import type { LMAlert } from '../../types/logicmonitor.js';
 import type {
   ListOperationArgs,
@@ -14,8 +13,7 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
-  OperationResult,
-  OperationType
+  OperationResult
 } from '../../types/operations.js';
 import { validateListAlerts, validateGetAlert, validateUpdateAlert } from './alertZodSchemas.js';
 import { getAlertLink } from '../../utils/resourceLinks.js';
@@ -23,7 +21,15 @@ import { getAlertLink } from '../../utils/resourceLinks.js';
 export class AlertHandler extends ResourceHandler<LMAlert> {
   constructor(client: LogicMonitorClient, sessionManager: SessionManager, sessionId?: string) {
     super(
-      { resourceType: 'alert', resourceName: 'alert', idField: 'id' },
+      {
+        resourceType: 'alert',
+        resourceName: 'alert',
+        idField: 'id',
+        linkBuilder: (account, resource) => {
+          const id = resource.id ?? resource.alertId ?? resource.internalId;
+          return id != null ? getAlertLink({ company: account, alertId: id as number | string }) : undefined;
+        }
+      },
       client,
       sessionManager,
       sessionId
@@ -33,14 +39,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMAlert>> {
     const validated = validateListAlerts({ ...args, operation: 'list' as const });
     const { fields, filter, size, offset, autoPaginate, sort, needMessage, customColumns } = validated;
-    const fieldConfig = sanitizeFields('alert', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown alert field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listAlerts({
       fields: fieldConfig.fieldsParam,
@@ -70,8 +69,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'alert', 'list', result);
+    this.recordAndStore('list', result);
 
     return result;
   }
@@ -79,7 +77,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMAlert>> {
     const validated = validateGetAlert({ ...args, operation: 'get' as const });
     const alertId = validated.id ?? validated.alertId;
-    
+
     if (!alertId) {
       throw new McpError(ErrorCode.InvalidParams, 'Alert ID is required');
     }
@@ -94,8 +92,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('get', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'alert', 'get', result);
+    this.recordAndStore('get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'alert', String(alertId), apiResult.data);
 
     return result;
@@ -108,11 +105,11 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
   protected async handleUpdate(args: UpdateOperationArgs): Promise<OperationResult<LMAlert>> {
     const validated = validateUpdateAlert({ ...args, operation: 'update' as const });
     const action = validated.action;
-    
+
     if (!action) {
       throw new McpError(ErrorCode.InvalidParams, 'action is required for update operation');
     }
-    
+
     const alertId = validated.id ?? validated.alertId;
     if (!alertId) {
       throw new McpError(ErrorCode.InvalidParams, 'Alert ID is required');
@@ -146,8 +143,7 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
       meta: apiResult.meta
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'alert', 'update', result);
+    this.recordAndStore('update', result);
 
     return result;
   }
@@ -156,37 +152,4 @@ export class AlertHandler extends ResourceHandler<LMAlert> {
     throw new McpError(ErrorCode.InvalidRequest, 'Alert deletion is not supported via API');
   }
 
-  protected override enhanceResult(operation: OperationType, result: OperationResult<LMAlert>): void {
-    super.enhanceResult(operation, result);
-    this.attachAlertLinks(result);
-  }
-
-  private attachAlertLinks(result: OperationResult<LMAlert>): void {
-    if (result.data) {
-      this.addLinkToAlert(result.data as unknown as Record<string, unknown>);
-    }
-    if (Array.isArray(result.items)) {
-      result.items.forEach(item =>
-        this.addLinkToAlert(item as unknown as Record<string, unknown>)
-      );
-    }
-  }
-
-  private addLinkToAlert(alert: Record<string, unknown> | undefined): void {
-    if (!alert) {
-      return;
-    }
-    try {
-      const alertId = alert.id ?? alert.alertId ?? alert.internalId;
-      if (!alertId) {
-        return;
-      }
-      alert.linkUrl = getAlertLink({
-        company: this.client.getAccount(),
-        alertId: alertId as number | string
-      });
-    } catch {
-      // Ignore failures to keep responses flowing
-    }
-  }
 }

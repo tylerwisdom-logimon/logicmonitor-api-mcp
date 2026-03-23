@@ -8,7 +8,6 @@ import { ResourceHandler } from '../base/resourceHandler.js';
 import { BatchOperationResolver } from '../base/batchResolver.js';
 import { LogicMonitorClient } from '../../api/client.js';
 import { SessionManager } from '../../session/sessionManager.js';
-import { sanitizeFields } from '../../utils/fieldMetadata.js';
 import { throwBatchFailure } from '../../utils/batchUtils.js';
 import type { LMCollectorGroup } from '../../types/logicmonitor.js';
 import type {
@@ -19,7 +18,7 @@ import type {
   DeleteOperationArgs,
   OperationResult
 } from '../../types/operations.js';
-import type { BatchResult, BatchItem } from '../../utils/batchProcessor.js';
+import type { BatchResult } from '../../utils/batchProcessor.js';
 import {
   validateListCollectorGroups,
   validateGetCollectorGroup,
@@ -38,7 +37,8 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       {
         resourceType: 'collectorGroup',
         resourceName: 'collectorGroup',
-        idField: 'id'
+        idField: 'id',
+        pluralKey: 'groups'
       },
       client,
       sessionManager,
@@ -49,14 +49,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<LMCollectorGroup>> {
     const validated = validateListCollectorGroups(args);
     const { fields, filter, size, offset, autoPaginate } = validated;
-    const fieldConfig = sanitizeFields('collectorGroup', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown collector group field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.listCollectorGroups({
       fields: fieldConfig.fieldsParam,
@@ -80,8 +73,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('list', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'list', result);
+    this.recordAndStore('list', result);
 
     return result;
   }
@@ -89,20 +81,13 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<LMCollectorGroup>> {
     const validated = validateGetCollectorGroup(args);
     const groupId = validated.id ?? this.resolveId(validated);
-    
+
     if (typeof groupId !== 'number') {
       throw new McpError(ErrorCode.InvalidParams, 'Collector group ID must be a number');
     }
 
     const { fields } = validated;
-    const fieldConfig = sanitizeFields('collectorGroup', fields);
-
-    if (fieldConfig.invalid.length > 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown collector group field(s): ${fieldConfig.invalid.join(', ')}`
-      );
-    }
+    const fieldConfig = this.validateFields(fields);
 
     const apiResult = await this.client.getCollectorGroup(groupId, {
       fields: fieldConfig.fieldsParam
@@ -119,8 +104,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('get', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'get', result);
+    this.recordAndStore('get', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'collectorGroup', groupId, apiResult.data);
 
     return result;
@@ -129,14 +113,12 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
   protected async handleCreate(args: CreateOperationArgs): Promise<OperationResult<LMCollectorGroup>> {
     const validated = validateCreateCollectorGroup(args);
     const isBatch = this.isBatchCreate(validated);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const batchOptions = BatchOperationResolver.extractBatchOptions(validated as any);
+    const batchOptions = BatchOperationResolver.extractBatchOptions(validated);
     const groupsInput = this.normalizeCreateInput(validated);
 
     const batchResult = await this.processBatch(
       groupsInput,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      async (groupPayload) => this.client.createCollectorGroup(groupPayload as any),
+      async (groupPayload) => this.client.createCollectorGroup(groupPayload as Parameters<LogicMonitorClient['createCollectorGroup']>[0]),
       {
         maxConcurrent: batchOptions.maxConcurrent || 5,
         continueOnError: batchOptions.continueOnError ?? true,
@@ -152,7 +134,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
         throwBatchFailure('Collector group create', batchResult.results[0]);
       }
       const createdGroup = entry.data as LMCollectorGroup;
-      
+
       const result: OperationResult<LMCollectorGroup> = {
         success: true,
         data: createdGroup,
@@ -160,17 +142,13 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
         meta: entry.meta ?? undefined
       };
 
-      this.storeInSession('create', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'create', result);
+      this.recordAndStore('create', result);
       this.sessionManager.cacheResource(this.sessionContext.id, 'collectorGroup', createdGroup.id, createdGroup);
 
       return result;
     }
 
-    const successful = normalized.filter(entry => entry.success && entry.data);
-    const successfulGroups = successful
-      .filter((entry): entry is typeof entry & { data: LMCollectorGroup } => entry.data !== undefined)
-      .map(entry => entry.data);
+    const successfulGroups = this.extractSuccessfulItems(normalized);
 
     const result: OperationResult<LMCollectorGroup> = {
       success: batchResult.success,
@@ -184,8 +162,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       results: normalized
     };
 
-    this.storeInSession('create', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'create', result);
+    this.recordAndStore('create', result);
 
     return result;
   }
@@ -196,8 +173,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
     const batchOptions = BatchOperationResolver.extractBatchOptions(validated);
 
     if (isBatch) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const resolution = await BatchOperationResolver.resolveItems<any>(
+      const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
         validated,
         this.sessionContext,
         this.client,
@@ -218,8 +194,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
           const mergedUpdates = { ...group, ...updates };
           delete mergedUpdates.id;
           delete mergedUpdates.groupId;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return this.client.updateCollectorGroup(groupId as number, mergedUpdates as any);
+          return this.client.updateCollectorGroup(groupId as number, mergedUpdates);
         },
         {
           maxConcurrent: batchOptions.maxConcurrent || 5,
@@ -229,13 +204,11 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       );
 
       const normalized = this.normalizeBatchResults(batchResult);
-      const successful = normalized.filter(entry => entry.success && entry.data);
+      const successfulGroups = this.extractSuccessfulItems(normalized);
 
       const result: OperationResult<LMCollectorGroup> = {
         success: batchResult.success,
-        items: successful
-          .filter((entry): entry is typeof entry & { data: LMCollectorGroup } => entry.data !== undefined)
-          .map(entry => entry.data),
+        items: successfulGroups,
         summary: batchResult.summary,
         request: {
           batch: true,
@@ -246,8 +219,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
         results: normalized
       };
 
-      this.storeInSession('update', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'update', result);
+      this.recordAndStore('update', result);
 
       return result;
     }
@@ -270,8 +242,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       raw: apiResult.raw
     };
 
-    this.storeInSession('update', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'update', result);
+    this.recordAndStore('update', result);
     this.sessionManager.cacheResource(this.sessionContext.id, 'collectorGroup', groupId, apiResult.data);
 
     return result;
@@ -279,7 +250,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
 
   protected async handleDelete(args: DeleteOperationArgs): Promise<OperationResult<LMCollectorGroup>> {
     const validated = validateDeleteCollectorGroup(args);
-    const isBatch = BatchOperationResolver.isBatchOperation(validated, 'groups') || 
+    const isBatch = BatchOperationResolver.isBatchOperation(validated, 'groups') ||
                      (validated.ids && Array.isArray(validated.ids));
     const batchOptions = BatchOperationResolver.extractBatchOptions(validated);
 
@@ -289,8 +260,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       if (validated.ids && Array.isArray(validated.ids)) {
         itemsToDelete = validated.ids.map((id: number) => ({ id }));
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const resolution = await BatchOperationResolver.resolveItems<any>(
+        const resolution = await BatchOperationResolver.resolveItems<Record<string, unknown>>(
           validated,
           this.sessionContext,
           this.client,
@@ -309,8 +279,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
             throw new McpError(ErrorCode.InvalidParams, 'Collector group ID is required for delete');
           }
           await this.client.deleteCollectorGroup(groupId as number);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return { id: groupId } as any as LMCollectorGroup;
+          return { id: groupId } as unknown as LMCollectorGroup;
         },
         {
           maxConcurrent: batchOptions.maxConcurrent || 5,
@@ -331,8 +300,7 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
         results: normalized
       };
 
-      this.storeInSession('delete', result);
-      this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'delete', result);
+      this.recordAndStore('delete', result);
 
       return result;
     }
@@ -348,36 +316,8 @@ export class CollectorGroupHandler extends ResourceHandler<LMCollectorGroup> {
       data: undefined
     };
 
-    this.storeInSession('delete', result);
-    this.sessionManager.recordOperation(this.sessionContext.id, 'collectorGroup', 'delete', result);
+    this.recordAndStore('delete', result);
 
     return result;
   }
-
-  private isBatchCreate(args: Record<string, unknown>): boolean {
-    return !!(args.groups && Array.isArray(args.groups));
-  }
-
-  private normalizeCreateInput(args: Record<string, unknown>): Array<Record<string, unknown>> {
-    if (args.groups && Array.isArray(args.groups)) {
-      return args.groups;
-    }
-    const singleGroup = { ...args };
-    delete singleGroup.operation;
-    delete singleGroup.batchOptions;
-    return [singleGroup];
-  }
-
-  private normalizeBatchResults(batch: BatchResult<LMCollectorGroup>): Array<BatchItem<LMCollectorGroup>> {
-    return batch.results.map(entry => ({
-      index: entry.index,
-      success: entry.success,
-      data: entry.data,
-      error: entry.error,
-      diagnostics: entry.diagnostics,
-      meta: entry.meta,
-      raw: entry.raw
-    }));
-  }
 }
-

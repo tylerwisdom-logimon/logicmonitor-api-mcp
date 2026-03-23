@@ -6,42 +6,45 @@
 import { z } from 'zod';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
-// List operation schema (get history)
+// List operation schema (get history) — .strict() rejects unknown parameters
 export const SessionListArgsSchema = z.object({
-  operation: z.literal('list'),
-  limit: z.number().min(1).max(50).optional()
+  operation: z.literal('list').describe('The operation to perform'),
+  limit: z.number().min(1).max(50).optional().describe('Maximum number of history entries to return (default 10, max 50)')
 }).strict();
 
-// Get operation schema (get context or variable)
+// Get operation schema (get context or variable) — .strict() rejects unknown parameters
 export const SessionGetArgsSchema = z.object({
-  operation: z.literal('get'),
-  key: z.string().min(1).optional(),
-  historyLimit: z.number().min(1).max(50).optional(),
-  includeResults: z.boolean().optional()
+  operation: z.literal('get').describe('The operation to perform'),
+  key: z.string().min(1).optional().describe('Session variable name to retrieve, e.g. "lastDeviceListIds". Omit to get full session context.'),
+  fields: z.string().optional().describe('For array variables: comma-separated fields to return per item, e.g. "id,displayName,hostStatus". Returns all fields if omitted.'),
+  index: z.number().min(0).optional().describe('For array variables: return only the item at this index (0-based).'),
+  limit: z.number().min(1).max(1000).optional().describe('For array variables: return only the first N items. Defaults to all.'),
+  historyLimit: z.number().min(1).max(50).optional().describe('Maximum number of history entries to include in context (default 10, max 50)'),
+  includeResults: z.boolean().optional().describe('If true, include full API response data in history entries')
 }).strict();
 
-// Create operation schema (set new variable)
+// Create operation schema (set new variable) — .strict() rejects unknown parameters
 export const SessionCreateArgsSchema = z.object({
-  operation: z.literal('create'),
-  key: z.string().min(1),
+  operation: z.literal('create').describe('The operation to perform'),
+  key: z.string().min(1).describe('Session variable name to create, e.g. "myDeviceIds"'),
   value: z.any().refine(val => val !== undefined, {
     message: 'value is required'
-  })
+  }).describe('Value to store in the session variable (any JSON-serializable type)')
 }).strict();
 
-// Update operation schema (update variable)
+// Update operation schema (update variable) — .strict() rejects unknown parameters
 export const SessionUpdateArgsSchema = z.object({
-  operation: z.literal('update'),
-  key: z.string().min(1),
+  operation: z.literal('update').describe('The operation to perform'),
+  key: z.string().min(1).describe('Session variable name to update'),
   value: z.any().refine(val => val !== undefined, {
     message: 'value is required'
-  })
+  }).describe('New value to store in the session variable (any JSON-serializable type)')
 }).strict();
 
-// Delete operation schema (clear context)
+// Delete operation schema (clear context) — .strict() rejects unknown parameters
 export const SessionDeleteArgsSchema = z.object({
-  operation: z.literal('delete'),
-  scope: z.enum(['variables', 'history', 'results', 'all']).optional()
+  operation: z.literal('delete').describe('The operation to perform'),
+  scope: z.enum(['variables', 'history', 'results', 'all']).optional().describe('What to clear: "variables" (stored vars), "history" (operation log), "results" (cached responses), or "all" (everything)')
 }).strict();
 
 // Combined operation schema with discriminated union
@@ -72,4 +75,3 @@ export function validateSessionOperation(args: unknown): SessionOperationArgs {
   }
   return result.data;
 }
-

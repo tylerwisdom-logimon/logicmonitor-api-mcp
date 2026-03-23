@@ -96,11 +96,14 @@ export class SessionHandler extends ResourceHandler<SessionData> {
   protected async handleGet(args: GetOperationArgs): Promise<OperationResult<SessionData>> {
     const validated = validateSessionOperation(args) as Extract<ReturnType<typeof validateSessionOperation>, { operation: 'get' }>;
     const { key, historyLimit, includeResults } = validated;
+    const fields = (validated as Record<string, unknown>).fields as string | undefined;
+    const index = (validated as Record<string, unknown>).index as number | undefined;
+    const limit = (validated as Record<string, unknown>).limit as number | undefined;
 
     // If key is provided, get specific variable
     if (key) {
-      const { value, exists } = this.sessionManager.getVariable(this.sessionContext.id, key);
-      
+      const { value: rawValue, exists } = this.sessionManager.getVariable(this.sessionContext.id, key);
+
       if (!exists) {
         const result: OperationResult<SessionData> = {
           success: true,
@@ -113,6 +116,32 @@ export class SessionHandler extends ResourceHandler<SessionData> {
         return result;
       }
 
+      // Apply filters if the value is an array
+      let value: unknown = rawValue;
+      if (Array.isArray(value)) {
+        // index: return single item
+        if (typeof index === 'number') {
+          value = index < value.length ? value[index] : null;
+        } else {
+          // limit: slice the array first
+          if (typeof limit === 'number') {
+            value = (value as unknown[]).slice(0, limit);
+          }
+          // fields: project each item to only requested fields
+          if (fields && Array.isArray(value)) {
+            const fieldList = fields.split(',').map((f: string) => f.trim());
+            value = (value as Array<Record<string, unknown>>).map(item => {
+              if (typeof item === 'object' && item !== null) {
+                return Object.fromEntries(
+                  fieldList.filter(f => f in (item as Record<string, unknown>)).map(f => [f, (item as Record<string, unknown>)[f]])
+                );
+              }
+              return item;
+            });
+          }
+        }
+      }
+
       const result: OperationResult<SessionData> = {
         success: true,
         data: {
@@ -120,7 +149,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
           key,
           value
         },
-        request: { key }
+        request: { key, ...(fields ? { fields } : {}), ...(typeof index === 'number' ? { index } : {}), ...(typeof limit === 'number' ? { limit } : {}) }
       };
       return result;
     }
