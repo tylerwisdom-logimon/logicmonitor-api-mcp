@@ -19,8 +19,25 @@ import { createRateLimitMiddleware } from './middleware/rateLimit.js';
 import { AuditLogger } from './audit/logger.js';
 import { GracefulShutdown } from './utils/gracefulShutdown.js';
 
+// Detect stdio mode early — before any logging can pollute stdout.
+// In stdio mode, stdout is reserved exclusively for JSON-RPC messages.
+const isStdioMode = process.argv.includes('--stdio');
+
 // Load configuration
 const config = getConfig();
+
+// In stdio mode, ALL Winston transports must write to stderr so stdout
+// remains clean for the JSON-RPC protocol used by StdioServerTransport.
+function createStderrConsoleTransport(format: winston.Logform.Format): winston.transports.ConsoleTransportInstance {
+  return new winston.transports.Console({
+    format,
+    stderrLevels: isStdioMode ? ['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly'] : [],
+  });
+}
+
+const logFormat = config.logging.format === 'simple'
+  ? winston.format.combine(winston.format.colorize(), winston.format.simple())
+  : winston.format.json();
 
 // Set up logger
 const logger = winston.createLogger({
@@ -30,20 +47,11 @@ const logger = winston.createLogger({
     winston.format.errors({ stack: true }),
     winston.format.json()
   ),
-  transports: [
-    new winston.transports.Console({
-      format: config.logging.format === 'simple'
-        ? winston.format.combine(
-            winston.format.colorize(),
-            winston.format.simple()
-          )
-        : winston.format.json()
-    })
-  ]
+  transports: [createStderrConsoleTransport(logFormat)]
 });
 
-// Initialize audit logger
-const auditLogger = new AuditLogger(config);
+// Initialize audit logger (routes to stderr in stdio mode)
+const auditLogger = new AuditLogger(config, isStdioMode);
 
 // Initialize graceful shutdown
 const gracefulShutdown = new GracefulShutdown(logger);
@@ -355,9 +363,10 @@ async function startHttpServer() {
 }
 
 async function startStdioServer() {
-  // In stdio mode, only log errors to stderr to avoid interfering with JSON-RPC
+  // In stdio mode, ALL log output must go to stderr — stdout is reserved
+  // exclusively for JSON-RPC messages by the StdioServerTransport.
   const stdioLogger = winston.createLogger({
-    level: 'error',
+    level: config.logging.level,
     format: winston.format.combine(
       winston.format.timestamp(),
       winston.format.errors({ stack: true }),
@@ -365,19 +374,18 @@ async function startStdioServer() {
     ),
     transports: [
       new winston.transports.Console({
-        stderrLevels: ['error'],
+        stderrLevels: ['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly'],
         format: winston.format.simple()
       })
     ]
   });
   
-  // Validate credentials
   if (!config.logicMonitor.account || !config.logicMonitor.bearerToken) {
     stdioLogger.error('STDIO mode requires LM_ACCOUNT and LM_BEARER_TOKEN environment variables');
     throw new Error('Missing required LogicMonitor credentials for STDIO mode');
   }
   
-  stdioLogger.error(`Starting STDIO mode with account: ${config.logicMonitor.account}`);
+  stdioLogger.info(`Starting STDIO mode with account: ${config.logicMonitor.account}`);
   
   const { server } = await createServer({ 
     logger: stdioLogger,
@@ -392,15 +400,14 @@ async function startStdioServer() {
   
   const transport = new StdioServerTransport();
   
-  // Register cleanup on shutdown
   gracefulShutdown.registerHandler(async () => {
-    stdioLogger.error('Closing STDIO server...');
+    stdioLogger.info('Closing STDIO server...');
     await server.close();
   });
   
   await server.connect(transport);
   
-  stdioLogger.error('STDIO server connected and ready');
+  stdioLogger.info('STDIO server connected and ready');
 }
 
 // Main entry point
@@ -415,10 +422,9 @@ async function main() {
       },
     });
 
-    // Determine which transports to start
-    const isStdioMode = process.argv.includes('--stdio') || !config.transport.enableHttp;
+    const shouldUseStdio = isStdioMode || !config.transport.enableHttp;
     
-    if (isStdioMode && config.transport.enableStdio) {
+    if (shouldUseStdio && config.transport.enableStdio) {
       logger.info('Starting in STDIO mode');
       await startStdioServer();
     } else if (config.transport.enableHttp) {

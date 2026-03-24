@@ -1,3 +1,29 @@
+# LogicMonitor MCP Server v2.1.1
+
+## Stdio Transport Fix
+
+Patch release that fixes a startup failure when using stdio-based MCP clients (Claude Desktop, Cursor, etc.).
+
+### Bug Fix
+
+- **Stdio stdout pollution** – Fixed a bug where Winston log output and audit log entries were written to `stdout` during server startup in stdio mode. MCP clients that read stdout exclusively for JSON-RPC messages (such as Claude Desktop) would receive non-JSON-RPC data like `{"level":"info","message":"Starting in STDIO mode","timestamp":"..."}` before the protocol handshake, causing a Zod validation error (`invalid_union` / `unrecognized_keys: ["level","message","timestamp"]`) and failing to connect.
+
+### What Changed
+
+- All Winston console transports now route to `stderr` when running in stdio mode (`--stdio`), keeping `stdout` clean for JSON-RPC.
+- The `AuditLogger` accepts a `useStderr` flag so its dedicated transport also writes to `stderr` in stdio mode.
+- The `startStdioServer()` logger is no longer restricted to `error` level — all configured log levels now flow to `stderr`, improving debuggability without polluting the protocol channel.
+
+### Upgrading from v2.1.0
+
+Drop-in replacement. No configuration or API changes.
+
+---
+
+**Full Changelog**: See [CHANGELOG.md](CHANGELOG.md) for detailed changes.
+
+---
+
 # LogicMonitor MCP Server v2.1.0
 
 ## New Resources, Smarter Responses, and LLM Eval System

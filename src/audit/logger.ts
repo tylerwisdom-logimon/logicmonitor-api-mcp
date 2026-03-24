@@ -11,10 +11,13 @@ export class AuditLogger {
   private logger: winston.Logger;
   private enabled: boolean;
 
-  constructor(config: Config) {
+  constructor(config: Config, useStderr = false) {
     this.enabled = config.logging.auditLogEnabled;
 
-    // Create dedicated audit logger
+    const format = config.logging.format === 'simple'
+      ? winston.format.combine(winston.format.colorize(), winston.format.simple())
+      : winston.format.json();
+
     this.logger = winston.createLogger({
       level: 'info',
       format: winston.format.combine(
@@ -27,12 +30,8 @@ export class AuditLogger {
       },
       transports: [
         new winston.transports.Console({
-          format: config.logging.format === 'simple'
-            ? winston.format.combine(
-                winston.format.colorize(),
-                winston.format.simple()
-              )
-            : winston.format.json(),
+          format,
+          stderrLevels: useStderr ? ['error', 'warn', 'info', 'http', 'verbose', 'debug', 'silly'] : [],
         }),
       ],
     });
