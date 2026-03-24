@@ -38,6 +38,6 @@ jobs:
           echo "Publishing version $TAG_VERSION from tag $GITHUB_REF_NAME"
           npm version "$TAG_VERSION" --no-git-tag-version --allow-same-version
       - run: npm run build
-      - run: npm publish --access public
+      - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
