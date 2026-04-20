@@ -217,7 +217,8 @@ export function generateDashboardPayload(options: {
     widgetTokens: [
       { name: 'test.resource', value: 'true' },
     ],
-    sharable: false,
+    // API-only bearer accounts cannot create private dashboards.
+    sharable: true,
   };
 }
 
@@ -258,4 +259,3 @@ export const FIELD_SELECTIONS = {
     full: '*',
   },
 };
-

@@ -10,7 +10,7 @@ import {
 import winston from 'winston';
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION } from './appInfo.js';
 import { LogicMonitorClient } from './api/client.js';
-import { LogicMonitorApiError } from './api/errors.js';
+import { LogicMonitorApiError, LogicMonitorUsageError } from './api/errors.js';
 import { listPrompts, getPrompt, getPromptContent } from './tools/prompts.js';
 import { SessionManager } from './session/sessionManager.js';
 import { metricsManager } from './metrics/metricsManager.js';
@@ -26,11 +26,12 @@ import { UserHandler } from './resources/user/userHandler.js';
 import { DashboardHandler } from './resources/dashboard/dashboardHandler.js';
 import { CollectorGroupHandler } from './resources/collectorGroup/collectorGroupHandler.js';
 import { DeviceDataHandler } from './resources/deviceData/deviceDataHandler.js';
+import { LogsHandler } from './resources/logs/logsHandler.js';
 import { SessionHandler } from './resources/session/sessionHandler.js';
 import { SdtHandler } from './resources/sdt/sdtHandler.js';
 import { OpsnoteHandler } from './resources/opsnote/opsnoteHandler.js';
 import type { ResourceType, BaseOperationArgs, OperationResult } from './types/operations.js';
-import { buildToolResponse } from './tools/utils/tool-response.js';
+import { buildToolErrorResponse, buildToolResponse, type ToolResponseConfig } from './tools/utils/tool-response.js';
 import { registerAllTools } from './tools/registry.js';
 import type { ToolRegistration } from './tools/registry.js';
 import { resolveCredentialsForOperation } from './auth/portalResolution.js';
@@ -38,6 +39,7 @@ import { type LMCredentials, type ResolvedLMCredentials, serializeCredentialsIde
 import {
   buildScopedSessionId,
   getDefaultPortal,
+  getPortalScopeCapabilities,
   getVisibleVariableKeys,
   getVisibleVariables,
   listPortalScopes,
@@ -339,6 +341,7 @@ export async function createServer(config: ServerConfig = {}) {
           storedVariables: getVisibleVariableKeys(scopedContext.variables),
           availableResultKeys: Object.keys(scopedContext.lastResults),
           historyEntries: scopedContext.history.length,
+          capabilities: getPortalScopeCapabilities(scope),
         };
       });
 
@@ -448,6 +451,15 @@ export async function createServer(config: ServerConfig = {}) {
       );
     }
 
+    if (resourceType === 'logs' && resolved.credentials.kind !== 'session') {
+      throw new LogicMonitorUsageError(
+        'lm_logs requires session-backed credentials. Configure LM_SESSION_LISTENER_BASE_URL and target a portal with the portal argument or lm_session defaultPortal.',
+        {
+          code: 'SESSION_REQUIRED',
+        }
+      );
+    }
+
     return {
       client: getClient(resolved.credentials),
       handlerSessionId,
@@ -471,6 +483,7 @@ export async function createServer(config: ServerConfig = {}) {
     'lm_dashboard':       { resourceType: 'dashboard',      resourceTitle: 'LogicMonitor dashboard',       handler: DashboardHandler },
     'lm_collector_group': { resourceType: 'collectorGroup', resourceTitle: 'LogicMonitor collector group', handler: CollectorGroupHandler },
     'lm_device_data':     { resourceType: 'deviceData',     resourceTitle: 'LogicMonitor device data',     handler: DeviceDataHandler },
+    'lm_logs':            { resourceType: 'logs',           resourceTitle: 'LogicMonitor logs',            handler: LogsHandler },
     'lm_sdt':             { resourceType: 'sdt',             resourceTitle: 'LogicMonitor SDT',             handler: SdtHandler },
     'lm_opsnote':         { resourceType: 'opsnote',         resourceTitle: 'LogicMonitor OpsNote',         handler: OpsnoteHandler },
     'lm_session':         { resourceType: 'session',        resourceTitle: 'LogicMonitor session',         handler: null },
@@ -626,13 +639,16 @@ export async function createServer(config: ServerConfig = {}) {
       metricsManager.recordSuccess(name, summarizeResultForMetrics(result));
       logger.info('Tool call successful', { tool: name, sessionId: toolContext.handlerSessionId });
 
-      const registryEntry = TOOL_REGISTRY[name];
-      const responseConfig = {
-        resourceName: resourceType,
-        resourceTitle: registryEntry?.resourceTitle ?? `LogicMonitor ${resourceType}`
-      };
+      const responseConfig = buildResponseConfig(name, resourceType, args as BaseOperationArgs);
 
-      return buildToolResponse(args as BaseOperationArgs, result as OperationResult<unknown>, responseConfig);
+      return buildToolResponse(
+        args as BaseOperationArgs,
+        result as OperationResult<unknown>,
+        responseConfig ?? {
+          resourceName: resourceType,
+          resourceTitle: `LogicMonitor ${resourceType}`,
+        }
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('Tool call failed', {
@@ -650,6 +666,8 @@ export async function createServer(config: ServerConfig = {}) {
         failureMetadata.code = error.code;
         failureMetadata.requestId = error.requestId;
         failureMetadata.requestUrl = error.requestUrl;
+      } else if (error instanceof LogicMonitorUsageError) {
+        failureMetadata.code = error.code;
       }
 
       metricsManager.recordFailure(name, error as Error, failureMetadata);
@@ -661,52 +679,87 @@ export async function createServer(config: ServerConfig = {}) {
 
       // API and application errors return as tool content with isError flag
       // so LLM clients can see the error details and decide how to proceed
-      const errorMessage = error instanceof LogicMonitorApiError
-        ? formatApiError(error)
-        : (message || 'An unknown error occurred');
+      const resourceType = getResourceTypeFromToolName(name);
+      const responseConfig = buildResponseConfig(name, resourceType, args as BaseOperationArgs);
 
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: errorMessage
-          }
-        ],
-        isError: true
-      };
+      return buildToolErrorResponse(
+        error,
+        responseConfig ?? {
+          resourceName: 'unknown',
+          resourceTitle: 'LogicMonitor tool',
+        }
+      );
     }
   });
 
-  function formatApiError(error: LogicMonitorApiError): string {
-    const lines: string[] = [];
-
-    // Primary error message (already contains the API's errorMessage)
-    lines.push(`LogicMonitor API error (${error.status ?? 'unknown'}): ${error.message}`);
-
-    // Include errorDetail from the response body if present
-    const body = error.responseBody as Record<string, unknown> | undefined;
-    if (body?.errorDetail && typeof body.errorDetail === 'object') {
-      const detail = body.errorDetail as Record<string, unknown>;
-      const detailStr = Object.entries(detail)
-        .filter(([, v]) => v !== null && v !== undefined && v !== '')
-        .map(([k, v]) => `  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
-        .join('\n');
-      if (detailStr) {
-        lines.push('Error details:');
-        lines.push(detailStr);
-      }
-    }
-
-    // Lightweight status-based hints
-    if (error.status === 404) lines.push('Hint: Resource not found. Verify the ID by listing resources first.');
-    if (error.status === 401 || error.status === 403) lines.push('Hint: Check API token permissions.');
-    if (error.status === 429) lines.push('Hint: Rate limited. The server will retry automatically.');
-
-    return lines.join('\n');
-  }
-
   function getResourceTypeFromToolName(toolName: string): ResourceType | null {
     return TOOL_REGISTRY[toolName]?.resourceType ?? null;
+  }
+
+  function buildResponseConfig(
+    toolName: string,
+    resourceType: ResourceType | null,
+    args: BaseOperationArgs
+  ): ToolResponseConfig | null {
+    if (!resourceType) {
+      return null;
+    }
+
+    const registryEntry = TOOL_REGISTRY[toolName];
+    const isLogsTool = toolName === 'lm_logs';
+
+    return {
+      resourceName: resourceType,
+      resourceTitle: registryEntry?.resourceTitle ?? `LogicMonitor ${resourceType}`,
+      ...(isLogsTool
+        ? {
+            sessionKeyOverrides: args.operation === 'delete'
+              ? ['session.lastDeletedLogsQueryId']
+              : ['session.lastLogs', 'session.lastLogsQueryId'],
+            includeStructuredErrorPayload: true,
+            errorRequestMetadata: buildLogsErrorRequestMetadata(args),
+          }
+        : {})
+    };
+  }
+
+  function buildLogsErrorRequestMetadata(args: BaseOperationArgs): Record<string, unknown> | undefined {
+    const request: Record<string, unknown> = {
+      operation: args.operation,
+    };
+
+    if (typeof args.portal === 'string') {
+      request.portal = args.portal;
+    }
+
+    if (typeof args.query === 'string') {
+      request.query = args.query;
+    }
+
+    if (typeof args.queryId === 'string') {
+      request.queryId = args.queryId;
+    }
+
+    if (typeof args.view === 'string') {
+      request.view = args.view;
+    }
+
+    if (typeof args.executionMode === 'string') {
+      request.executionMode = args.executionMode;
+    }
+
+    const range: Record<string, number> = {};
+    if (typeof args.startAtMs === 'number') {
+      range.startAtMs = args.startAtMs;
+    }
+    if (typeof args.endAtMs === 'number') {
+      range.endAtMs = args.endAtMs;
+    }
+    if (Object.keys(range).length > 0) {
+      request.range = range;
+    }
+
+    return Object.keys(request).length > 0 ? request : undefined;
   }
 
   function createResourceHandler(

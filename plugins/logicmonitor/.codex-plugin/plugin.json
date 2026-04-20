@@ -1,0 +1,28 @@
+{
+  "name": "logicmonitor",
+  "version": "0.1.0",
+  "description": "Codex plugin for the LogicMonitor MCP server.",
+  "author": {
+    "name": "Tyler Wisdom",
+    "email": "tyler.wisdom@example.com",
+    "url": "https://github.com/tylerwisdom-logimon"
+  },
+  "homepage": "https://github.com/tylerwisdom-logimon/logicmonitor-api-mcp",
+  "repository": "https://github.com/tylerwisdom-logimon/logicmonitor-api-mcp",
+  "license": "MPL-2.0",
+  "keywords": ["logicmonitor", "mcp", "codex"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "LogicMonitor",
+    "shortDescription": "Source-of-truth access to the LogicMonitor MCP server.",
+    "longDescription": "Provides Codex with a narrow, repo-local plugin wrapper around the LogicMonitor MCP server. Standard mode uses bearer-token-first access, while Advanced local mode delegates to the project launcher for listener-backed sessions.",
+    "developerName": "Tyler Wisdom",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": [
+      "Check LogicMonitor state through the MCP server.",
+      "Use the local launcher for listener-backed sessions.",
+      "Inspect portal-scoped session context."
+    ]
+  }
+}

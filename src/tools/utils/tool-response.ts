@@ -1,4 +1,10 @@
 import type { BaseOperationArgs, OperationResult, OperationType } from '../../types/operations.js';
+import {
+  formatLogicMonitorApiError,
+  isLogicMonitorApiError,
+  isLogicMonitorUsageError,
+  toLogicMonitorToolErrorDetail,
+} from '../../api/errors.js';
 import { capitalizeFirst } from '../../utils/strings.js';
 
 export interface ToolResponseConfig {
@@ -6,6 +12,8 @@ export interface ToolResponseConfig {
   resourceTitle: string;
   sessionKeyOverrides?: string[];
   notes?: string[];
+  includeStructuredErrorPayload?: boolean;
+  errorRequestMetadata?: Record<string, unknown>;
 }
 
 /** Threshold: lists/batches with this many items or fewer get full JSON payloads */
@@ -13,6 +21,9 @@ const COMPACT_THRESHOLD = 5;
 
 /** Max sampled rows for time-series data */
 const MAX_SAMPLED_ROWS = 50;
+
+/** Max rows rendered for compact list views */
+const MAX_LIST_SAMPLE_ROWS = 8;
 
 /** Key display fields per resource type for compact list views */
 const LIST_SUMMARY_FIELDS: Record<string, string[]> = {
@@ -49,6 +60,30 @@ export function buildToolResponse<T>(
   return { content };
 }
 
+export function buildToolErrorResponse(
+  error: unknown,
+  config: ToolResponseConfig
+) {
+  const summary = formatErrorSummary(error);
+  const payload = buildErrorPayload(error, config);
+
+  const content: Array<{ type: 'text'; text: string }> = [
+    { type: 'text' as const, text: summary }
+  ];
+
+  if (payload) {
+    content.push({
+      type: 'text' as const,
+      text: `Full LogicMonitor payload:\n${JSON.stringify(payload, null, 2)}`,
+    });
+  }
+
+  return {
+    content,
+    isError: true as const,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Payload builder — operation-aware, size-aware
 // ---------------------------------------------------------------------------
@@ -62,7 +97,7 @@ function buildPayload<T>(
 
   // Batch results (has summary with per-item results)
   if (cleaned.summary && cleaned.results) {
-    return formatBatchPayload(cleaned, config);
+    return formatBatchPayload(operation, cleaned, config);
   }
 
   // List results (has items array)
@@ -119,17 +154,25 @@ function formatListPayload<T>(
   config: ToolResponseConfig
 ): string {
   const items = result.items as Array<Record<string, unknown>>;
+  const sampledItems = sampleListItems(items, MAX_LIST_SAMPLE_ROWS);
   const fields = LIST_SUMMARY_FIELDS[config.resourceName]
     ?? inferKeyFields(items[0]);
 
   const lines: string[] = [];
-  lines.push(`Items (${items.length}${result.total && result.total > items.length ? ` of ${result.total}` : ''}):`);
+  const totalDescription = result.total && result.total > items.length
+    ? `${items.length} of ${result.total} total`
+    : `${items.length} total`;
+  lines.push(`Items (${totalDescription}):`);
+
+  if (sampledItems.length < items.length) {
+    lines.push(`Sampled rows (${sampledItems.length} of ${items.length} shown):`);
+  }
 
   // Header
   lines.push(`| ${fields.join(' | ')} |`);
 
   // Rows
-  for (const item of items) {
+  for (const item of sampledItems) {
     const values = fields.map(f => formatCellValue(item[f]));
     lines.push(`| ${values.join(' | ')} |`);
   }
@@ -140,6 +183,20 @@ function formatListPayload<T>(
   lines.push(`Full item details available via: lm_session get key="last${capitalized}List" fields="<fieldNames>" or index=N for a specific item.`);
 
   return lines.join('\n');
+}
+
+function sampleListItems<T>(items: T[], maxRows: number): T[] {
+  if (items.length <= maxRows) {
+    return items;
+  }
+
+  const headCount = Math.ceil(maxRows / 2);
+  const tailCount = maxRows - headCount;
+
+  return [
+    ...items.slice(0, headCount),
+    ...items.slice(items.length - tailCount),
+  ];
 }
 
 function inferKeyFields(item: Record<string, unknown> | undefined): string[] {
@@ -232,6 +289,7 @@ function formatDeviceDataPayload<T>(result: OperationResult<T>): string {
 // ---------------------------------------------------------------------------
 
 function formatBatchPayload<T>(
+  operation: OperationType,
   result: OperationResult<T>,
   config: ToolResponseConfig
 ): string {
@@ -253,8 +311,10 @@ function formatBatchPayload<T>(
     lines.push('');
   }
 
-  const capitalized = capitalizeFirst(config.resourceName);
-  lines.push(`Full per-item results stored in session. Retrieve with: lm_session get key="lastUpdated${capitalized}s" fields="id,displayName" or index=N.`);
+  const sessionKeys = getSessionKeys(operation, result, config).map(key => key.replace(/^session\./, ''));
+  if (sessionKeys.length > 0) {
+    lines.push(`Full per-item results stored in session. Retrieve with: lm_session get key="${sessionKeys[0]}" or index=N.`);
+  }
 
   return lines.join('\n');
 }
@@ -367,4 +427,51 @@ function deriveDefaultSessionKeys<T>(
   }
 
   return keys;
+}
+
+function formatErrorSummary(error: unknown): string {
+  if (isLogicMonitorApiError(error)) {
+    return formatLogicMonitorApiError(error);
+  }
+
+  if (isLogicMonitorUsageError(error)) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
+
+function buildErrorPayload(
+  error: unknown,
+  config: ToolResponseConfig
+): Record<string, unknown> | null {
+  if (!config.includeStructuredErrorPayload) {
+    return null;
+  }
+
+  const errorDetail = isLogicMonitorApiError(error) || isLogicMonitorUsageError(error)
+    ? toLogicMonitorToolErrorDetail(error)
+    : {
+        message: error instanceof Error ? error.message : String(error),
+      };
+
+  const requestMetadata = compactObject(config.errorRequestMetadata ?? {});
+
+  return {
+    success: false,
+    error: compactObject({
+      ...errorDetail,
+      request: Object.keys(requestMetadata).length > 0 ? requestMetadata : undefined,
+    }),
+  };
+}
+
+function compactObject<T extends Record<string, unknown>>(value: T): T {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)
+  ) as T;
 }

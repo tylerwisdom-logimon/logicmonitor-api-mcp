@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "logicmonitor": {
+      "command": "./scripts/launch.sh",
+      "cwd": "."
+    }
+  }
+}

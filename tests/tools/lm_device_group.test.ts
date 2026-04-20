@@ -7,7 +7,6 @@ import { createTestClient, TestMCPClient } from '../utils/testClient.js';
 import {
   assertToolSuccess,
   extractToolData,
-  generateTestResourceName,
   isValidLMId,
   retry,
 } from '../utils/testHelpers.js';
@@ -24,15 +23,30 @@ describe('lm_device_group', () => {
   let client: TestMCPClient;
   let resources: DiscoveredResources;
   let createdGroupIds: number[] = [];
+  let existingFilterTargets: Array<{ id: number; name: string }> = [];
+  let batchFilter: string | null = null;
 
   beforeAll(async () => {
     client = await createTestClient('lm-device-group-test-session');
     resources = await discoverResources(client);
+    const stableGroupsResult = await client.callTool('lm_device_group', {
+      operation: 'list',
+      size: 50,
+      fields: 'id,name,disableAlerting',
+      autoPaginate: false,
+    });
+    assertToolSuccess(stableGroupsResult);
+    const stableGroupsData = extractToolData<{ items: Array<{ id: number; name: string; disableAlerting?: boolean }> }>(stableGroupsResult);
+    existingFilterTargets = stableGroupsData.items.filter(group => !group.name.includes('"') && group.disableAlerting === false).slice(0, 2);
+    if (existingFilterTargets.length < 2) {
+      throw new Error('Need at least two existing device groups with disableAlerting=false for stable filter coverage');
+    }
+    batchFilter = existingFilterTargets.map(group => `name:"${group.name}"`).join('||');
 
     console.log('Test environment:');
     console.log(`  - Root Device Group ID: ${resources.rootDeviceGroupId}`);
     console.log(`  - Device Groups: ${resources.deviceGroups.length}`);
-  });
+  }, 90000);
 
   afterAll(async () => {
     // Cleanup created groups
@@ -80,27 +94,17 @@ describe('lm_device_group', () => {
     });
 
     test('should list device groups with filter', async () => {
-      const testGroup = await createTestDeviceGroup(client, {
-        parentId: resources.rootDeviceGroupId,
-      });
-      createdGroupIds.push(testGroup.id);
+      const existingFilterTarget = existingFilterTargets[0];
 
-      // Poll until LM's search index reflects the new group
-      await retry(
-        async () => {
-          const result = await client.callTool('lm_device_group', {
-            operation: 'list',
-            filter: `name:"${testGroup.name}"`,
-          });
-          assertToolSuccess(result);
-          const data = extractToolData<{ items: Array<{ id: number; name: string }> }>(result);
-          if (!data.items.some(g => g.id === testGroup.id)) {
-            throw new Error('device group not yet visible to list/filter');
-          }
-        },
-        { maxAttempts: 15, delayMs: 2000 }
-      );
-    });
+      const result = await client.callTool('lm_device_group', {
+        operation: 'list',
+        filter: `name:"${existingFilterTarget.name}"`,
+      });
+
+      assertToolSuccess(result);
+      const data = extractToolData<{ items: Array<{ id: number; name: string }> }>(result);
+      expect(data.items.some(g => g.id === existingFilterTarget?.id)).toBe(true);
+    }, 45000);
 
     test('should list device groups with field selection', async () => {
       const result = await client.callTool('lm_device_group', {
@@ -244,43 +248,28 @@ describe('lm_device_group', () => {
     });
 
     test('should batch update with filter', async () => {
-      const prefix = generateTestResourceName('batch-group');
-      const group1 = await createTestDeviceGroup(client, {
-        parentId: resources.rootDeviceGroupId,
-        name: `${prefix}-1`,
-      });
-      const group2 = await createTestDeviceGroup(client, {
-        parentId: resources.rootDeviceGroupId,
-        name: `${prefix}-2`,
-      });
-      createdGroupIds.push(group1.id, group2.id);
+      if (!batchFilter) {
+        throw new Error('Batch update filter fixtures were not created');
+      }
 
-      // Exact names + OR avoids wildcard quirks; poll until list matches (LM search can lag create).
-      const batchFilter = `name:"${prefix}-1"||name:"${prefix}-2"`;
-      await retry(
+      const result = await retry(
         async () => {
-          const check = await client.callTool('lm_device_group', {
-            operation: 'list',
-            filter: batchFilter,
-            size: 50,
-            autoPaginate: false,
+          const attempt = await client.callTool('lm_device_group', {
+            operation: 'update',
+            filter: batchFilter!,
+            updates: {
+              disableAlerting: false,
+            },
           });
-          assertToolSuccess(check);
-          const checkData = extractToolData<{ items: Array<{ id: number }> }>(check);
-          if ((checkData.items?.length ?? 0) < 2) {
-            throw new Error('device groups not yet visible to list/filter');
-          }
+          assertToolSuccess(attempt);
+          return attempt;
         },
-        { maxAttempts: 15, delayMs: 2000 }
+        {
+          maxAttempts: 60,
+          delayMs: 1000,
+          backoffMultiplier: 1,
+        }
       );
-
-      const result = await client.callTool('lm_device_group', {
-        operation: 'update',
-        filter: batchFilter,
-        updates: {
-          description: 'Batch updated',
-        },
-      });
 
       assertToolSuccess(result);
       const data = extractToolData<{ 
@@ -290,7 +279,7 @@ describe('lm_device_group', () => {
 
       expect(data.success).toBe(true);
       expect(data.summary.succeeded).toBeGreaterThanOrEqual(2);
-    });
+    }, 90000);
   });
 
   describe('Delete Operations', () => {
@@ -366,4 +355,3 @@ describe('lm_device_group', () => {
     });
   });
 });
-

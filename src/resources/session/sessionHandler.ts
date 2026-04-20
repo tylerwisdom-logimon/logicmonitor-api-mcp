@@ -13,6 +13,7 @@ import {
   DEFAULT_PORTAL_KEY,
   buildPortalScopedSessionId,
   getDefaultPortal,
+  getPortalScopeCapabilities,
   getPortalScope,
   getVisibleVariableKeys,
   getVisibleVariables,
@@ -26,11 +27,16 @@ import type {
   CreateOperationArgs,
   UpdateOperationArgs,
   DeleteOperationArgs,
+  OperationType,
   OperationResult
 } from '../../types/operations.js';
 import { validateSessionOperation } from './sessionZodSchemas.js';
 
 interface SessionData {
+  capabilities?: {
+    sessionBackedApiV4: boolean;
+    lmLogs: boolean;
+  };
   sessionId?: string;
   variables?: Record<string, unknown>;
   lastResults?: Record<string, unknown> | string[];
@@ -66,6 +72,10 @@ interface SessionData {
     storedVariables: string[];
     availableResultKeys: string[];
     historyEntries: number;
+    capabilities: {
+      sessionBackedApiV4: boolean;
+      lmLogs: boolean;
+    };
   }>;
 }
 
@@ -98,22 +108,30 @@ export class SessionHandler extends ResourceHandler<SessionData> {
     this.apiTimeoutMs = options.apiTimeoutMs ?? 30000;
   }
 
-  private getSessionIdForPortal(portal?: string): string {
+  private async getSessionIdForPortal(portal?: string): Promise<string> {
     if (!portal) {
       return this.sessionContext.id;
     }
 
     const normalizedPortal = normalizePortal(portal);
-    const existingScope = getPortalScope(this.sessionManager, this.sessionContext.id, normalizedPortal);
-    if (existingScope) {
-      return existingScope.sessionId;
-    }
-
     if (!this.credentials || this.credentials.kind === 'bearer') {
       throw new McpError(
         ErrorCode.InvalidParams,
         "Portal-scoped session inspection is only available when listener-based LogicMonitor auth is configured."
       );
+    }
+
+    const availablePortals = await this.getAvailablePortals();
+    if (availablePortals && !availablePortals.includes(normalizedPortal)) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        `Unknown LogicMonitor portal '${normalizedPortal}'. Listener reported available portals: ${availablePortals.join(', ')}.`
+      );
+    }
+
+    const existingScope = getPortalScope(this.sessionManager, this.sessionContext.id, normalizedPortal);
+    if (existingScope) {
+      return existingScope.sessionId;
     }
 
     const listenerBaseUrl = this.credentials.lm_session_listener_base_url;
@@ -149,8 +167,39 @@ export class SessionHandler extends ResourceHandler<SessionData> {
         storedVariables: getVisibleVariableKeys(scopedContext.variables),
         availableResultKeys: Object.keys(scopedContext.lastResults),
         historyEntries: scopedContext.history.length,
+        capabilities: getPortalScopeCapabilities(scope),
       };
     });
+  }
+
+  private getTargetPortalCapabilities(portal: string): NonNullable<SessionData['capabilities']> {
+    const scope = getPortalScope(this.sessionManager, this.sessionContext.id, portal);
+
+    if (scope) {
+      return getPortalScopeCapabilities(scope);
+    }
+
+    const sessionBackedApiV4 = Boolean(this.credentials && this.credentials.kind !== 'bearer');
+
+    return {
+      sessionBackedApiV4,
+      lmLogs: sessionBackedApiV4,
+    };
+  }
+
+  private mirrorPortalScopedSessionActivity(
+    targetSessionId: string,
+    operation: OperationType,
+    request: Record<string, unknown>,
+    result: OperationResult<SessionData>,
+    portal?: string
+  ): void {
+    if (!portal || targetSessionId === this.sessionContext.id) {
+      return;
+    }
+
+    this.sessionManager.recordResult(targetSessionId, 'lm_session', request, result);
+    this.sessionManager.recordOperation(targetSessionId, 'session', operation, result);
   }
 
   private buildSnapshotData(
@@ -174,7 +223,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
   protected async handleList(args: ListOperationArgs): Promise<OperationResult<SessionData>> {
     const validated = validateSessionOperation(args) as Extract<ReturnType<typeof validateSessionOperation>, { operation: 'list' }>;
     const { limit, portal } = validated as typeof validated & { portal?: string };
-    const targetSessionId = this.getSessionIdForPortal(portal);
+    const targetSessionId = await this.getSessionIdForPortal(portal);
 
     const snapshot = this.sessionManager.getSnapshot(targetSessionId, {
       historyLimit: limit ?? 10,
@@ -193,6 +242,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       data.portalScopes = this.buildPortalScopeSummaries();
     } else {
       data.portal = normalizePortal(portal);
+      data.capabilities = this.getTargetPortalCapabilities(data.portal);
     }
 
     const result: OperationResult<SessionData> = {
@@ -204,6 +254,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       }
     };
 
+    this.mirrorPortalScopedSessionActivity(targetSessionId, 'list', result.request ?? {}, result, portal);
     return result;
   }
 
@@ -219,7 +270,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
     const limit = (validated as Record<string, unknown>).limit as number | undefined;
     const targetSessionId = key === DEFAULT_PORTAL_KEY
       ? this.sessionContext.id
-      : this.getSessionIdForPortal(portal);
+      : await this.getSessionIdForPortal(portal);
 
     // If key is provided, get specific variable
     if (key) {
@@ -237,6 +288,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
             ...(portal ? { portal: normalizePortal(portal) } : {})
           }
         };
+        this.mirrorPortalScopedSessionActivity(targetSessionId, 'get', result.request ?? {}, result, portal);
         return result;
       }
 
@@ -282,6 +334,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
           ...(portal ? { portal: normalizePortal(portal) } : {})
         }
       };
+      this.mirrorPortalScopedSessionActivity(targetSessionId, 'get', result.request ?? {}, result, portal);
       return result;
     }
 
@@ -295,6 +348,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       data: {
         ...data,
         ...(portal ? { portal: normalizePortal(portal) } : {}),
+        ...(portal ? { capabilities: this.getTargetPortalCapabilities(normalizePortal(portal)) } : {}),
         ...(!portal
           ? {
               defaultPortal: getDefaultPortal(this.sessionManager, this.sessionContext.id),
@@ -310,6 +364,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       }
     };
 
+    this.mirrorPortalScopedSessionActivity(targetSessionId, 'get', result.request ?? {}, result, portal);
     return result;
   }
 
@@ -353,7 +408,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       };
     }
 
-    const targetSessionId = this.getSessionIdForPortal(portal);
+    const targetSessionId = await this.getSessionIdForPortal(portal);
     const context = this.sessionManager.setVariable(targetSessionId, key, value);
 
     const result: OperationResult<SessionData> = {
@@ -371,6 +426,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       }
     };
 
+    this.mirrorPortalScopedSessionActivity(targetSessionId, 'create', result.request ?? {}, result, portal);
     return result;
   }
 
@@ -414,7 +470,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       };
     }
 
-    const targetSessionId = this.getSessionIdForPortal(portal);
+    const targetSessionId = await this.getSessionIdForPortal(portal);
     const context = this.sessionManager.setVariable(targetSessionId, key, value);
 
     const result: OperationResult<SessionData> = {
@@ -432,6 +488,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
       }
     };
 
+    this.mirrorPortalScopedSessionActivity(targetSessionId, 'update', result.request ?? {}, result, portal);
     return result;
   }
 
@@ -442,7 +499,7 @@ export class SessionHandler extends ResourceHandler<SessionData> {
   protected async handleDelete(args: DeleteOperationArgs): Promise<OperationResult<SessionData>> {
     const validated = validateSessionOperation(args) as Extract<ReturnType<typeof validateSessionOperation>, { operation: 'delete' }>;
     const { scope, portal } = validated as typeof validated & { portal?: string };
-    const targetSessionId = this.getSessionIdForPortal(portal);
+    const targetSessionId = await this.getSessionIdForPortal(portal);
 
     const updatedContext = this.sessionManager.clear(
       targetSessionId,
@@ -464,6 +521,18 @@ export class SessionHandler extends ResourceHandler<SessionData> {
         ...(portal ? { portal: normalizePortal(portal) } : {})
       }
     };
+
+    this.mirrorPortalScopedSessionActivity(targetSessionId, 'delete', result.request ?? {}, result, portal);
+
+    if (portal && targetSessionId !== this.sessionContext.id) {
+      const finalContext = this.sessionManager.getContext(targetSessionId);
+      result.data = {
+        ...result.data,
+        remainingVariables: getVisibleVariableKeys(finalContext.variables),
+        remainingResultKeys: Object.keys(finalContext.lastResults),
+        historyEntries: finalContext.history.length,
+      };
+    }
 
     return result;
   }

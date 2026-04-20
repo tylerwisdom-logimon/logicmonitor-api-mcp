@@ -9,10 +9,11 @@ import { assertToolSuccess, extractToolData } from './testHelpers.js';
 
 describe('resourceLinks', () => {
   const company = 'Example';
+  const portalUiBaseUrl = `https://${company.toLowerCase()}.logicmonitor.com/santaba/uiv4`;
 
   it('builds dashboard link with group hierarchy', () => {
     const link = getDashboardLink({
-      company,
+      portalUiBaseUrl,
       groupIds: [1, 20],
       dashboardId: 42
     });
@@ -23,7 +24,7 @@ describe('resourceLinks', () => {
 
   it('builds dashboard link without groups', () => {
     const link = getDashboardLink({
-      company,
+      portalUiBaseUrl,
       dashboardId: 'main'
     });
     expect(link).toBe(
@@ -33,7 +34,7 @@ describe('resourceLinks', () => {
 
   it('builds device link with simplified path', () => {
     const link = getDeviceLink({
-      company: 'myCompany',
+      portalUiBaseUrl: 'https://mycompany.logicmonitor.com/santaba/uiv4',
       deviceId: 99
     });
     expect(link).toBe(
@@ -43,7 +44,7 @@ describe('resourceLinks', () => {
 
   it('builds website link with simplified path', () => {
     const link = getWebsiteLink({
-      company,
+      portalUiBaseUrl,
       websiteId: 101
     });
     expect(link).toBe(
@@ -53,7 +54,7 @@ describe('resourceLinks', () => {
 
   it('builds alert link', () => {
     const link = getAlertLink({
-      company,
+      portalUiBaseUrl,
       alertId: 'A-1234'
     });
     expect(link).toBe(
@@ -64,7 +65,7 @@ describe('resourceLinks', () => {
   it('throws when required identifiers are missing', () => {
     expect(() =>
       getDeviceLink({
-        company,
+        portalUiBaseUrl,
         deviceId: '' as unknown as number
       })
     ).toThrow('deviceId is required to build URLs.');
@@ -74,6 +75,7 @@ describe('resourceLinks', () => {
 describe('resource link samples (console output)', () => {
   let client: TestMCPClient;
   const company = global.testConfig?.lmAccount ?? 'example';
+  const portalUiBaseUrl = `https://${company.toLowerCase()}.logicmonitor.com/santaba/uiv4`;
 
   beforeAll(async () => {
     client = await createTestClient('resource-link-samples');
@@ -120,7 +122,7 @@ describe('resource link samples (console output)', () => {
         case 'dashboard': {
           const dashboard = sample as { id?: unknown; groupId?: unknown };
           return getDashboardLink({
-            company,
+            portalUiBaseUrl,
             dashboardId: dashboard.id as number | string,
             groupIds: parseGroupIds(dashboard.groupId)
           });
@@ -128,21 +130,21 @@ describe('resource link samples (console output)', () => {
         case 'device': {
           const device = sample as { id?: unknown; hostGroupIds?: unknown };
           return getDeviceLink({
-            company,
+            portalUiBaseUrl,
             deviceId: device.id as number | string
           });
         }
         case 'website': {
           const website = sample as { id?: unknown; groupId?: unknown };
           return getWebsiteLink({
-            company,
+            portalUiBaseUrl,
             websiteId: website.id as number | string
           });
         }
         case 'alert': {
           const alert = sample as { id?: unknown };
           return getAlertLink({
-            company,
+            portalUiBaseUrl,
             alertId: alert.id as number | string
           });
         }
@@ -176,4 +178,3 @@ describe('resource link samples (console output)', () => {
     }, 30000);
   }
 });
-

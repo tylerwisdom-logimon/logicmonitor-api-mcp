@@ -60,6 +60,31 @@ describe('sessionAuth', () => {
     });
   });
 
+  it('reuses a cached portal session without refetching the listener', async () => {
+    let requestCount = 0;
+
+    await withListener(async (_req, res) => {
+      requestCount += 1;
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        data: {
+          jSessionID: 'abc123',
+          token: 'csrf456',
+          domain: 'portal.logicmonitor.com',
+        }
+      }));
+    }, async (baseUrl) => {
+      const credentials = createSessionCredentials('prod', baseUrl);
+
+      const first = await fetchPortalSession(credentials, 1000);
+      const second = await fetchPortalSession(credentials, 1000);
+
+      expect(first).toEqual(second);
+      expect(requestCount).toBe(1);
+    });
+  });
+
   it('loads available portals from the listener', async () => {
     await withListener((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
