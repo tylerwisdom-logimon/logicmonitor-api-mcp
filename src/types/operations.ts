@@ -2,9 +2,9 @@
  * Operation types and enums for resource handlers
  */
 
-export type ResourceType = 'device' | 'deviceGroup' | 'website' | 'websiteGroup' | 'collector' | 'alert' | 'user' | 'dashboard' | 'collectorGroup' | 'deviceData' | 'session' | 'sdt' | 'opsnote';
+export type ResourceType = 'device' | 'deviceGroup' | 'website' | 'websiteGroup' | 'collector' | 'alert' | 'user' | 'dashboard' | 'collectorGroup' | 'deviceData' | 'logs' | 'session' | 'sdt' | 'opsnote';
 
-export type OperationType = 'list' | 'get' | 'create' | 'update' | 'delete' | 'list_datasources' | 'list_instances' | 'get_data';
+export type OperationType = 'list' | 'get' | 'create' | 'update' | 'delete' | 'list_datasources' | 'list_instances' | 'get_data' | 'search' | 'result';
 
 export interface BaseOperationArgs {
   operation: OperationType;

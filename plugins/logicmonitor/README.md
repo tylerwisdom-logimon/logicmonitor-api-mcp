@@ -14,12 +14,14 @@ This plugin is a thin Codex wrapper around the LogicMonitor MCP server in this r
 Use `Standard` mode when you want the default shareable setup. The plugin prefers the packaged `dist/index.js --stdio` path and only falls back to `npx -y logicmonitor-api-mcp --stdio` when the packaged entrypoint is unavailable.
 
 This mode is bearer-token-first and expects `LM_ACCOUNT` plus `LM_BEARER_TOKEN` in the plugin environment.
+LM Logs is not available in this mode during the current phase because it depends on listener-backed session context rather than bearer-only access.
 
 # Advanced local mode
 
 Use `Advanced local` when you are running from this repository checkout and want the listener-backed local workflow. The plugin delegates to `scripts/start-logicmonitor-mcp.sh`, which expects a built `dist/index.js` plus an ignored `.env.codex.local` file.
 
 That local env file should include `LM_SESSION_LISTENER_BASE_URL`, and it can optionally include `LM_PORTAL` as a default portal.
+Advanced local is the right path for session-backed capabilities such as LM Logs.
 
 # Doctor workflow
 

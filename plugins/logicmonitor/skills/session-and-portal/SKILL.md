@@ -1,7 +1,7 @@
 # session-and-portal
 
 ## When to use
-Use this skill when a task depends on listener-backed session auth, selecting the correct LogicMonitor portal, or understanding how portal-scoped session state is reused across calls.
+Use this skill when a task depends on listener-backed session auth, selecting the correct LogicMonitor portal, understanding how portal-scoped session state is reused across calls, or working with session-backed surfaces such as LM Logs.
 
 ## Portal precedence
 In listener mode, portal selection follows this order: an explicit tool `portal` first, then the session default stored in `lm_session`, and then the fallback `LM_PORTAL` configuration.
@@ -21,6 +21,8 @@ If the listener cannot return portals or a portal session, treat that as a liste
 
 ## What this skill must not redefine
 Do not restate the low-level session schema or resource-specific call shapes here. This skill only explains portal choice, session inspection, and the listener-backed workflow.
+
+LM Logs remains outside bearer-only mode in this phase, so this skill should point readers back to the advanced local listener-backed workflow instead of trying to describe bearer-only access to it.
 
 ## Truth sources
 - `README.md`

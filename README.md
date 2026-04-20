@@ -193,6 +193,10 @@ LM_BEARER_TOKEN=default-lm-token
 AUTH_CREDENTIAL_MAPPING='{"*":{"account":"shared","token":"lm-default"}}'
 ```
 
+## LM Logs In This Phase
+
+LM Logs is an advanced-local, session-backed capability. In this phase it is only available through the listener-backed workflow, so bearer-only mode does not expose it.
+
 **Example: Bearer token with per-request credentials**
 ```bash
 curl -H "Authorization: Bearer token1" \

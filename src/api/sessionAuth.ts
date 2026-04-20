@@ -1,6 +1,14 @@
 import axios from 'axios';
 import { LogicMonitorApiError } from './errors.js';
-import type { ListenerLMCredentials, SessionLMCredentials } from '../auth/lmCredentials.js';
+import {
+  normalizeListenerBaseUrl,
+  type ListenerLMCredentials,
+  type SessionLMCredentials,
+} from '../auth/lmCredentials.js';
+import {
+  cachePortalSession,
+  getCachedPortalSession,
+} from './portalSessionCache.js';
 
 const LISTENER_SESSION_ACCESS_HEADER = 'X-LM-Listener-Session-Access';
 
@@ -82,7 +90,7 @@ function getListenerBaseUrl(credentials: SessionLMCredentials | ListenerLMCreden
   const baseUrl = typeof credentials === 'string'
     ? credentials
     : credentials.lm_session_listener_base_url;
-  return baseUrl.replace(/\/+$/, '');
+  return normalizeListenerBaseUrl(baseUrl);
 }
 
 export async function fetchAvailablePortals(
@@ -127,6 +135,17 @@ export async function fetchPortalSession(
 ): Promise<PortalSession> {
   const portal = credentials.lm_portal.trim().toLowerCase();
   const baseUrl = getListenerBaseUrl(credentials);
+
+  const cachedSession = getCachedPortalSession(baseUrl, portal);
+  if (cachedSession) {
+    return new PortalSession(
+      cachedSession.portalName,
+      cachedSession.jSessionId,
+      cachedSession.csrfToken,
+      cachedSession.domain
+    );
+  }
+
   const url = `${baseUrl}/api/v1/portal/${encodeURIComponent(portal)}`;
 
   try {
@@ -137,7 +156,9 @@ export async function fetchPortalSession(
       timeout: timeoutMs,
     });
 
-    return PortalSession.fromExtensionPayload(portal, response.data?.data);
+    const session = PortalSession.fromExtensionPayload(portal, response.data?.data);
+    cachePortalSession(baseUrl, session);
+    return session;
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;

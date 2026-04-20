@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError, AxiosHeaders, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosInstance, AxiosError, AxiosHeaders, AxiosResponse, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import winston from 'winston';
 import { performance } from 'perf_hooks';
 import { 
@@ -27,6 +27,8 @@ import { LogicMonitorApiError } from './errors.js';
 import { getKnownFields } from '../utils/fieldMetadata.js';
 import type { ResolvedLMCredentials, SessionLMCredentials } from '../auth/lmCredentials.js';
 import { fetchPortalSession } from './sessionAuth.js';
+import { invalidateCachedPortalSession } from './portalSessionCache.js';
+import type { LogicMonitorRequestOptions } from './requestOptions.js';
 
 export type LogicMonitorHttpMethod = 'get' | 'post' | 'patch' | 'put' | 'delete';
 
@@ -58,6 +60,21 @@ export interface ApiResult<T> {
 export interface LogicMonitorClientOptions {
   timeoutMs?: number;
 }
+
+interface LogicMonitorRequestConfig extends InternalAxiosRequestConfig {
+  lmRequestOptions?: LogicMonitorRequestOptions;
+}
+
+export interface LogicMonitorLowLevelRequestConfig extends AxiosRequestConfig {
+}
+
+const AUTH_CRITICAL_HEADERS = new Set([
+  'authorization',
+  'cookie',
+  'content-type',
+  'x-csrf-token',
+  'x-version'
+]);
 
 export interface ApiListResult<T> {
   items: T[];
@@ -93,6 +110,7 @@ export class LogicMonitorClient {
   private axiosInstance: AxiosInstance;
   private logger: winston.Logger;
   private readonly account: string;
+  private readonly sessionCredentials?: SessionLMCredentials;
   private portalUiBaseUrl: string;
 
   constructor(
@@ -110,6 +128,7 @@ export class LogicMonitorClient {
     this.account = credentials.kind === 'bearer'
       ? credentials.lm_account.trim().toLowerCase()
       : credentials.lm_portal.trim().toLowerCase();
+    this.sessionCredentials = credentials.kind === 'session' ? credentials : undefined;
     this.portalUiBaseUrl = `https://${this.account}.logicmonitor.com/santaba/uiv4`;
 
     this.axiosInstance = credentials.kind === 'bearer'
@@ -132,7 +151,12 @@ export class LogicMonitorClient {
 
     if (credentials.kind === 'session') {
       this.axiosInstance.interceptors.request.use(
-        (requestConfig) => this.attachSessionAuth(credentials, timeout, requestConfig)
+        (requestConfig) => this.attachSessionAuth(
+          credentials,
+          timeout,
+          requestConfig,
+          (requestConfig as LogicMonitorRequestConfig).lmRequestOptions ?? {}
+        )
       );
     }
 
@@ -150,21 +174,80 @@ export class LogicMonitorClient {
     );
   }
 
+  public async request<TResponse>(
+    requestConfig: LogicMonitorLowLevelRequestConfig,
+    requestOptions: LogicMonitorRequestOptions = {}
+  ): Promise<AxiosResponse<TResponse>> {
+    const resolvedOptions = this.resolveRequestOptions(requestOptions);
+    const normalizedConfig: LogicMonitorRequestConfig = {
+      ...requestConfig,
+      headers: AxiosHeaders.from(requestConfig.headers as AxiosHeaders | Record<string, string> | undefined),
+      lmRequestOptions: requestOptions
+    };
+
+    if (resolvedOptions.basePath && !normalizedConfig.baseURL) {
+      normalizedConfig.baseURL = `https://${this.account}.logicmonitor.com${resolvedOptions.basePath}`;
+    }
+
+    if (resolvedOptions.apiVersion) {
+      normalizedConfig.headers.set('X-Version', resolvedOptions.apiVersion);
+    }
+
+    this.applyNonCriticalRequestHeaders(normalizedConfig.headers, requestOptions.headers);
+
+    return this.axiosInstance.request<TResponse>(normalizedConfig);
+  }
+
+  private resolveRequestOptions(requestOptions: LogicMonitorRequestOptions): {
+    apiVersion?: '3' | '4';
+    basePath?: '/santaba/rest' | '/santaba/uiv4';
+  } {
+    if (!requestOptions.apiVersion && !requestOptions.basePath) {
+      return {};
+    }
+
+    const apiVersion = requestOptions.apiVersion
+      ?? (requestOptions.basePath === '/santaba/uiv4' ? '4' : '3');
+    const basePath = requestOptions.basePath
+      ?? (apiVersion === '4' ? '/santaba/uiv4' : '/santaba/rest');
+
+    return { apiVersion, basePath };
+  }
+
+  private applyNonCriticalRequestHeaders(
+    headers: AxiosHeaders,
+    requestHeaders?: Record<string, string>
+  ): void {
+    if (!requestHeaders) {
+      return;
+    }
+
+    for (const [key, value] of Object.entries(requestHeaders)) {
+      if (!AUTH_CRITICAL_HEADERS.has(key.toLowerCase())) {
+        headers.set(key, value);
+      }
+    }
+  }
+
   private async attachSessionAuth(
     credentials: SessionLMCredentials,
     timeoutMs: number,
-    requestConfig: InternalAxiosRequestConfig
+    requestConfig: InternalAxiosRequestConfig,
+    requestOptions: LogicMonitorRequestOptions = {}
   ): Promise<InternalAxiosRequestConfig> {
     const session = await fetchPortalSession(credentials, timeoutMs);
     const headers = AxiosHeaders.from(requestConfig.headers ?? {});
+    const { apiVersion, basePath } = this.resolveRequestOptions(requestOptions);
+    const effectiveApiVersion = apiVersion ?? '3';
+    const effectiveBasePath = basePath ?? '/santaba/rest';
 
     headers.delete('Authorization');
     headers.set('Content-Type', 'application/json');
-    headers.set('X-Version', '3');
+    headers.set('X-Version', effectiveApiVersion);
     headers.set('cookie', `JSESSIONID=${session.jSessionId};`);
     headers.set('x-csrf-token', session.csrfToken);
 
-    requestConfig.baseURL = `${session.portalBaseUrl}/santaba/rest`;
+    requestConfig.baseURL = `${session.portalBaseUrl}${effectiveBasePath}`;
     this.portalUiBaseUrl = `${session.portalBaseUrl}/santaba/uiv4`;
     requestConfig.headers = headers;
     return requestConfig;
@@ -226,6 +309,13 @@ export class LogicMonitorClient {
         rateLimiter.updateRateLimitInfo('api-request', rateLimitInfo);
         this.logger.debug('Rate limit info from error response', rateLimitInfo);
       }
+
+      if (status === 401 && this.sessionCredentials) {
+        invalidateCachedPortalSession(
+          this.sessionCredentials.lm_session_listener_base_url,
+          this.sessionCredentials.lm_portal
+        );
+      }
       
       // Check if this is a rate limit error
       if (status === 429) {
@@ -281,7 +371,8 @@ export class LogicMonitorClient {
     endpoint: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     params?: Record<string, any>,
-    autoPaginate: boolean = true
+    autoPaginate: boolean = true,
+    requestOptions: LogicMonitorRequestOptions = {}
   ): Promise<ApiListResult<T>> {
     const requestedSize = params?.size ?? 1000;
     const baseOffset = params?.offset ?? 0;
@@ -328,9 +419,14 @@ export class LogicMonitorClient {
           pageParams.searchId = searchId;
         }
 
-        const response = await this.axiosInstance.get<LMPaginatedResponse<T>>(endpoint, {
-          params: pageParams
-        });
+        const response = await this.request<LMPaginatedResponse<T>>(
+          {
+            method: 'get',
+            url: endpoint,
+            params: pageParams
+          },
+          requestOptions
+        );
         const duration = performance.now() - pageStartedAt;
 
         const data = response.data;

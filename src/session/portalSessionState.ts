@@ -13,6 +13,11 @@ export interface PortalScopeRecord {
   lastUsedAt: string;
 }
 
+export interface PortalScopeCapabilities {
+  sessionBackedApiV4: boolean;
+  lmLogs: boolean;
+}
+
 type PortalScopeMap = Record<string, PortalScopeRecord>;
 
 function getScopeMapFromContext(
@@ -116,6 +121,17 @@ export function listPortalScopes(
 ): PortalScopeRecord[] {
   const { scopes } = getScopeMapFromContext(sessionManager, sessionId);
   return Object.values(scopes).sort((left, right) => left.portal.localeCompare(right.portal));
+}
+
+export function getPortalScopeCapabilities(
+  scope: Pick<PortalScopeRecord, 'credentialsIdentity'>
+): PortalScopeCapabilities {
+  const sessionBackedApiV4 = !scope.credentialsIdentity.startsWith('bearer:');
+
+  return {
+    sessionBackedApiV4,
+    lmLogs: sessionBackedApiV4,
+  };
 }
 
 export function getVisibleVariables(

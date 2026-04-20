@@ -13,6 +13,7 @@ import { CollectorGroupOperationArgsSchema } from '../resources/collectorGroup/c
 import { UserOperationArgsSchema } from '../resources/user/userZodSchemas.js';
 import { DashboardOperationArgsSchema } from '../resources/dashboard/dashboardZodSchemas.js';
 import { DeviceDataOperationArgsSchema } from '../resources/deviceData/deviceDataZodSchemas.js';
+import { LogsOperationArgsSchema } from '../resources/logs/logsZodSchemas.js';
 import { SessionOperationArgsSchema } from '../resources/session/sessionZodSchemas.js';
 import { SdtOperationArgsSchema } from '../resources/sdt/sdtZodSchemas.js';
 import { OpsnoteOperationArgsSchema } from '../resources/opsnote/opsnoteZodSchemas.js';
@@ -241,6 +242,25 @@ Available fields:
 Note: This is a read-only tool for querying monitoring data.`,
     inputSchema: DeviceDataOperationArgsSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  },
+  {
+    name: 'lm_logs',
+    title: 'LogicMonitor Logs Query Management',
+    description: `Manage retained LM Logs execution queries. Supports the following operations:
+- search: Create a retained LM Logs query with a bounded time window
+- result: Resume a retained query and fetch a single view
+- delete: Clean up a retained query by queryId
+
+This phase-one surface follows the session-backed API v4 execution lifecycle:
+- POST /santaba/rest/log/search creates a retained query with X-Version: 4
+- POST /santaba/rest/log/search resumes a retained queryId for a requested view
+- DELETE /santaba/rest/log/search/{queryId} cleans up retained query state
+
+Session-backed credentials are required. Bearer-token auth is not supported for this tool.
+
+Responses echo the compact request shape, returned queryId, response metadata, cleanup status when applicable, and the raw LM Logs payload for follow-up reuse.`,
+    inputSchema: LogsOperationArgsSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   },
   {
     name: 'lm_session',
