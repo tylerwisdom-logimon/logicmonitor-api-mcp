@@ -274,7 +274,7 @@ describe('lm_device_group', () => {
           });
 
           assertToolSuccess(result);
-          const data = extractToolData<{ 
+          const data = extractToolData<{
             success: boolean;
             summary: { succeeded: number };
           }>(result);
