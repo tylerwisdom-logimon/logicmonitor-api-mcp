@@ -9,6 +9,7 @@ dist/
 .env
 .env.local
 .env.*.local
+.env.codex.local
 
 # Logs
 logs/
@@ -35,6 +36,9 @@ yarn-error.log*
 CLAUDE.md
 DESIGN.md
 /docs
+AGENTS.md
+docs/superpowers/
+.tmp/
 
 .npmignore
 
